@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BLE 扫描（Web Bluetooth）示例</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
+    button { padding: 10px 14px; margin-right: 8px; }
+    .hint { color: #666; margin: 10px 0 14px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
+    th { background: #f6f6f6; text-align: left; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h2>BLE 扫描（Web Bluetooth）</h2>
+
+  <div class="hint">
+    <b>重要限制：</b>网页拿不到 BLE 的真实 MAC 地址；这里用 <span class="mono">device.id</span> 作为匿名标识。<br/>
+    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在 <span class="mono">chrome://flags/#enable-experimental-web-platform-features</span> 开启实验特性。<br/>
+    <b>环境：</b>必须 HTTPS 或 localhost。
+  </div>
+
+  <div>
+    <button id="btnStart">开始扫描</button>
+    <button id="btnStop" disabled>停止扫描</button>
+    <button id="btnClear">清空列表</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>匿名ID（代替 MAC）</th>
+        <th>RSSI</th>
+        <th>最近一次出现</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <div id="log"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const tbody = $("tbody");
+  const logEl = $("log");
+  const btnStart = $("btnStart");
+  const btnStop = $("btnStop");
+  const btnClear = $("btnClear");
+
+  /** @type {BluetoothLEScan|null} */
+  let scan = null;
+
+  // device.id => { row, lastSeenMs }
+  const rows = new Map();
+
+  function log(msg) {
+    const t = new Date().toLocaleString();
+    logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+  }
+
+  function upsertRow({ name, id, rssi }) {
+    const now = Date.now();
+    let entry = rows.get(id);
+
+    if (!entry) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="name"></td>
+        <td class="mono id"></td>
+        <td class="mono rssi"></td>
+        <td class="mono last"></td>
+      `;
+      tbody.appendChild(tr);
+
+      entry = { tr, lastSeenMs: now };
+      rows.set(id, entry);
+    }
+
+    entry.lastSeenMs = now;
+    entry.tr.querySelector(".name").textContent = name || "(无名称)";
+    entry.tr.querySelector(".id").textContent = id;
+    entry.tr.querySelector(".rssi").textContent = (typeof rssi === "number") ? `${rssi} dBm` : "(未知)";
+    entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
+  }
+
+  function clearTable() {
+    rows.clear();
+    tbody.innerHTML = "";
+    log("已清空列表");
+  }
+
+  async function startScan() {
+    if (!("bluetooth" in navigator)) {
+      log("当前浏览器不支持 Web Bluetooth（navigator.bluetooth 不存在）");
+      return;
+    }
+
+    // 优先使用 Scanning API（能拿 RSSI）
+    if (typeof navigator.bluetooth.requestLEScan === "function") {
+      try {
+        // 你可以用 filters 限定更快更干净，例如：
+        // { filters: [{ namePrefix: "TYGER" }] }
+        // 或 { filters: [{ services: ["battery_service"] }] }
+        scan = await navigator.bluetooth.requestLEScan({
+          acceptAllAdvertisements: true
+        });
+
+        navigator.bluetooth.addEventListener("advertisementreceived", onAdv);
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        log("开始扫描：requestLEScan 已启动（将持续接收周边广播事件）");
+        return;
+      } catch (e) {
+        log("requestLEScan 启动失败：" + (e?.message || e));
+        log("将尝试降级到 requestDevice（只能手动选设备，且通常拿不到 RSSI）");
+      }
+    } else {
+      log("当前浏览器没有 requestLEScan（Scanning API 不可用）。尝试降级到 requestDevice。");
+    }
+
+    // 降级：requestDevice（不是“被动扫描所有广播”）
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: []
+      });
+      // 这里通常没有 RSSI；只显示名称和匿名 id
+      upsertRow({ name: device.name, id: device.id, rssi: undefined });
+      log(`已选择设备：${device.name || "(无名称)"} / ${device.id}`);
+    } catch (e) {
+      log("requestDevice 失败：" + (e?.message || e));
+    }
+  }
+
+  function stopScan() {
+    try {
+      if (scan) scan.stop();
+    } catch (_) {}
+    scan = null;
+
+    navigator.bluetooth.removeEventListener("advertisementreceived", onAdv);
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    log("已停止扫描");
+  }
+
+  function onAdv(event) {
+    // event: BluetoothAdvertisingEvent
+    // 注意：device.id 不是 MAC；name 也可能为空
+    const dev = event.device;
+    upsertRow({
+      name: dev?.name,
+      id: dev?.id || "(unknown-id)",
+      rssi: event.rssi
+    });
+  }
+
+  btnStart.addEventListener("click", startScan);
+  btnStop.addEventListener("click", stopScan);
+  btnClear.addEventListener("click", clearTable);
+
+  log("页面已加载。请点击“开始扫描”。");
+})();
+</script>
+</body>
+</html>
