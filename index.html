@@ -7,7 +7,11 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
     button { padding: 10px 14px; margin-right: 8px; }
+    input[type="text"] { padding: 10px 12px; width: 100%; box-sizing: border-box; }
     .hint { color: #666; margin: 10px 0 14px; line-height: 1.5; }
+    .row { margin: 10px 0; }
+    .label { font-weight: 600; margin-bottom: 6px; }
+    .subhint { color: #666; font-size: 13px; line-height: 1.5; margin-top: 6px; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; }
     th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; vertical-align: top; }
     th { background: #f6f6f6; text-align: left; }
@@ -20,16 +24,29 @@
     .svcTitle { font-weight: 600; }
     .chip { display: inline-block; padding: 2px 6px; border: 1px solid #ddd; border-radius: 999px; margin-left: 6px; font-size: 12px; color: #444; }
     .err { color: #b00020; }
+    .ok  { color: #0a7a2f; }
   </style>
 </head>
 <body>
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
+    <b>你遇到的报错原因：</b>Web Bluetooth 要求你在 <span class="mono">requestDevice()</span> 时声明允许访问的服务（<span class="mono">optionalServices</span> 或 filters.services）。否则连接后访问任意服务都会被浏览器拦截。<br/>
     <b>提示：</b>网页拿不到 BLE 的真实 MAC 地址（隐私限制）。<br/>
     <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在 <span class="mono">chrome://flags/#enable-experimental-web-platform-features</span> 开启实验特性。<br/>
-    <b>环境：</b>必须 HTTPS 或 localhost。<br/>
-    <b>连接说明：</b>部分浏览器会要求通过 <span class="mono">requestDevice()</span> 授权后才能真正连接；本页面点击“连接”会尽量用名称过滤打开设备选择器（若名称为空则无法过滤）。
+    <b>环境：</b>必须 HTTPS 或 localhost。
+  </div>
+
+  <div class="row">
+    <div class="label">可访问服务（optionalServices，逗号分隔）</div>
+    <input id="svcInput" type="text" value="1800,1801,fe59,180a,180f,6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
+    <div class="subhint">
+      支持三种写法：<br/>
+      1) 标准别名：<span class="mono">device_information</span> / <span class="mono">battery_service</span> …<br/>
+      2) 16-bit：<span class="mono">180A</span> 或 <span class="mono">0x180A</span><br/>
+      3) 128-bit UUID：<span class="mono">xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span><br/>
+      <b>注意：</b>只能枚举/访问你在这里声明过的服务；想“列出所有服务”，在 Web 里做不到真正意义的“全量自动发现”（必须事先声明可访问的服务集合）。
+    </div>
   </div>
 
   <div>
@@ -60,6 +77,7 @@
   const btnStart = $("btnStart");
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
+  const svcInput = $("svcInput");
 
   // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
@@ -73,12 +91,42 @@
   let refreshTimer = null;
 
   // 用 device.id 做“唯一键”（不显示在表格里）
-  // id => {
-  //   tr, detailsTr, lastSeenMs, rssi, name,
-  //   advDevice, grantedDevice, gattServer,
-  //   connected, connecting
-  // }
   const rows = new Map();
+
+  // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
+  // 这里给一些常见别名映射到 16-bit UUID，最终统一转成 128-bit 字符串。
+  const NAME_TO_16BIT = new Map(Object.entries({
+    generic_access: "1800",
+    generic_attribute: "1801",
+    immediate_alert: "1802",
+    link_loss: "1803",
+    tx_power: "1804",
+    current_time: "1805",
+    reference_time_update: "1806",
+    next_dst_change: "1807",
+    glucose: "1808",
+    health_thermometer: "1809",
+    device_information: "180A",
+    heart_rate: "180D",
+    phone_alert_status: "180E",
+    battery_service: "180F",
+    secure_dfu: "FE59",
+    secure_dfu_service: "FE59",
+    blood_pressure: "1810",
+    alert_notification: "1811",
+    human_interface_device: "1812",
+    scan_parameters: "1813",
+    running_speed_and_cadence: "1814",
+    automation_io: "1815",
+    cycling_speed_and_cadence: "1816",
+    cycling_power: "1818",
+    location_and_navigation: "1819",
+    environmental_sensing: "181A",
+    body_composition: "181B",
+    user_data: "181C",
+    weight_scale: "181D",
+    continuous_glucose_monitoring: "181F"
+  }));
 
   function log(msg) {
     const t = new Date().toLocaleString();
@@ -90,14 +138,7 @@
     refreshTimer = window.setInterval(refreshView, REFRESH_MS);
   }
 
-  function stopRefreshTimer() {
-    if (refreshTimer === null) return;
-    window.clearInterval(refreshTimer);
-    refreshTimer = null;
-  }
-
   function setButtonState(entry, state) {
-    // state: 'idle' | 'connecting' | 'connected'
     const btn = entry.tr?.querySelector("button.connect");
     const badge = entry.tr?.querySelector(".status");
     if (!btn || !badge) return;
@@ -106,14 +147,17 @@
       btn.disabled = false;
       btn.textContent = "连接";
       badge.textContent = "";
+      badge.className = "chip status";
     } else if (state === "connecting") {
       btn.disabled = true;
       btn.textContent = "连接中…";
       badge.textContent = "连接中";
+      badge.className = "chip status";
     } else if (state === "connected") {
       btn.disabled = false;
       btn.textContent = "断开";
       badge.textContent = "已连接";
+      badge.className = "chip status ok";
     }
   }
 
@@ -180,7 +224,6 @@
 
     entry.lastSeenMs = now;
     entry.name = name || "(无名称)";
-    // RSSI 可能偶尔缺失：保留最近一次数值
     if (typeof rssi === "number") entry.rssi = rssi;
     if (advDevice) entry.advDevice = advDevice;
 
@@ -204,7 +247,7 @@
       }
     }
 
-    // 2) 按 RSSI 自动排序（RSSI 越大越靠前，例如 -35 > -80）
+    // 2) 按 RSSI 自动排序（RSSI 越大越靠前）
     const entries = Array.from(rows.values());
     entries.sort((a, b) => {
       const ar = (typeof a.rssi === "number") ? a.rssi : -Infinity;
@@ -213,7 +256,7 @@
       return b.lastSeenMs - a.lastSeenMs;
     });
 
-    // 3) 重新按顺序挂载（appendChild 会移动已存在节点）
+    // 3) 重新按顺序挂载
     for (const e of entries) {
       tbody.appendChild(e.tr);
       tbody.appendChild(e.detailsTr);
@@ -230,19 +273,60 @@
     log("已清空列表（并尝试断开所有连接）");
   }
 
+  function normalizeServiceToken(token) {
+    // Return: null | { kind: 'name'|'uuid', value: string }
+    const t = String(token || "").trim();
+    if (!t) return null;
+
+    // 128-bit UUID
+    if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(t)) {
+      return { kind: "uuid", value: t.toLowerCase() };
+    }
+
+    // 0x180A or 180A
+    let hex = t.toLowerCase();
+    if (hex.startsWith("0x")) hex = hex.slice(2);
+    if (/^[0-9a-f]{4}$/.test(hex)) {
+      // Convert 16-bit -> 128-bit base UUID
+      const full = `0000${hex}-0000-1000-8000-00805f9b34fb`;
+      return { kind: "uuid", value: full };
+    }
+
+    // name alias
+    const key = t.toLowerCase().replace(/\s+/g, "_");
+    if (NAME_TO_16BIT.has(key)) {
+      const h = NAME_TO_16BIT.get(key).toLowerCase();
+      const full = `0000${h}-0000-1000-8000-00805f9b34fb`;
+      return { kind: "uuid", value: full };
+    }
+
+    // As a fallback, let browser handle standard names if it supports them:
+    // (some implementations accept strings like 'battery_service')
+    return { kind: "name", value: key };
+  }
+
+  function getOptionalServices() {
+    const raw = svcInput.value || "";
+    const tokens = raw.split(",").map(s => s.trim()).filter(Boolean);
+    const normalized = [];
+    for (const tok of tokens) {
+      const r = normalizeServiceToken(tok);
+      if (!r) continue;
+      normalized.push(r.value);
+    }
+    // de-dup
+    return Array.from(new Set(normalized));
+  }
+
   async function startScan() {
     if (!("bluetooth" in navigator)) {
       log("当前浏览器不支持 Web Bluetooth（navigator.bluetooth 不存在）");
       return;
     }
 
-    // 优先使用 Scanning API（能拿 RSSI）
     if (typeof navigator.bluetooth.requestLEScan === "function") {
       try {
-        scan = await navigator.bluetooth.requestLEScan({
-          acceptAllAdvertisements: true
-        });
-
+        scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
         navigator.bluetooth.addEventListener("advertisementreceived", onAdv);
         btnStart.disabled = true;
         btnStop.disabled = false;
@@ -261,7 +345,7 @@
     try {
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: []
+        optionalServices: getOptionalServices()
       });
       upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
       ensureRefreshTimer();
@@ -279,7 +363,6 @@
     btnStart.disabled = false;
     btnStop.disabled = true;
 
-    // 仍然保留“10秒窗口”的衰减显示（已连接的不清）
     ensureRefreshTimer();
     log("已停止扫描（列表将仅保留最近10秒出现的设备；已连接设备不会自动消失）");
   }
@@ -295,23 +378,32 @@
   }
 
   async function connectEntry(entry) {
+    if (!("bluetooth" in navigator)) {
+      log("当前浏览器不支持 Web Bluetooth。");
+      return;
+    }
     if (entry.connecting) return;
+
     entry.connecting = true;
     setButtonState(entry, "connecting");
 
     try {
-      // 为了更稳妥：点击“连接”时使用 requestDevice() 走一次“用户选择授权”
-      let device = null;
+      const optionalServices = getOptionalServices();
+      if (optionalServices.length === 0) {
+        log("提示：optionalServices 为空，连接后无法枚举服务。请在上方输入要访问的服务 UUID/别名。");
+      }
 
+      // 点击“连接”时使用 requestDevice() 走一次“用户选择授权”
+      let device = null;
       if (entry.name && entry.name !== "(无名称)") {
         device = await navigator.bluetooth.requestDevice({
           filters: [{ name: entry.name }],
-          optionalServices: []
+          optionalServices
         });
       } else {
         device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
-          optionalServices: []
+          optionalServices
         });
       }
 
@@ -333,14 +425,14 @@
       setButtonState(entry, "connected");
       log(`已连接：${device.name || "(无名称)"}`);
 
-      await enumerateGATT(entry, server);
+      await enumerateGATT(entry, server, optionalServices);
     } catch (e) {
       entry.connecting = false;
       entry.connected = false;
       entry.gattServer = null;
       setButtonState(entry, "idle");
-      showDetails(entry, `<span class="err">连接失败：${escapeHtml(e?.message || e)}</span>`, true);
-      log("连接失败：" + (e?.message || e));
+      showDetails(entry, `<span class="err">连接/枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
+      log("连接/枚举失败：" + (e?.message || e));
     }
   }
 
@@ -367,15 +459,20 @@
     if (details && open) details.open = true;
   }
 
-  async function enumerateGATT(entry, server) {
+  async function enumerateGATT(entry, server, optionalServices) {
     try {
+      // getPrimaryServices() 只会返回“本 origin 被允许访问”的 services
       const services = await server.getPrimaryServices();
+      const allowNote = optionalServices?.length
+        ? `<div class="subhint">当前允许访问的服务数量：<span class="mono">${optionalServices.length}</span>（只会显示这些范围内能访问到的服务）</div>`
+        : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
+
       if (!services || services.length === 0) {
-        showDetails(entry, "(未发现 Primary Services)", true);
+        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, true);
         return;
       }
 
-      const parts = [];
+      const parts = [allowNote];
       for (const svc of services) {
         let chars = null;
         try {
@@ -387,7 +484,7 @@
         const svcUuid = svc.uuid;
         let svcBlock = `<div class="svc"><div class="svcTitle">Service: <span class="mono">${escapeHtml(svcUuid)}</span></div>`;
         if (!chars) {
-          svcBlock += `<div class="err">无法读取 Characteristics（可能未授权或设备限制）</div>`;
+          svcBlock += `<div class="err">无法读取 Characteristics（可能未将该服务加入 optionalServices 或设备限制）</div>`;
         } else if (chars.length === 0) {
           svcBlock += `<div>(无 Characteristics)</div>`;
         } else {
