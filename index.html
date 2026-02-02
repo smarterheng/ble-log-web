@@ -19,7 +19,7 @@
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
-    <b>重要限制：</b>网页拿不到 BLE 的真实 MAC 地址；这里用 <span class="mono">device.id</span> 作为匿名标识。<br/>
+    <b>重要限制：</b>网页拿不到 BLE 的真实 MAC 地址；出于隐私原因 Web Bluetooth 也不会暴露 MAC。<br/>
     <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在 <span class="mono">chrome://flags/#enable-experimental-web-platform-features</span> 开启实验特性。<br/>
     <b>环境：</b>必须 HTTPS 或 localhost。
   </div>
@@ -34,7 +34,6 @@
     <thead>
       <tr>
         <th>名称</th>
-        <th>匿名ID（代替 MAC）</th>
         <th>RSSI</th>
         <th>最近一次出现</th>
       </tr>
@@ -53,15 +52,35 @@
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
 
+  // 只显示最近 10 秒出现过的设备
+  const MAX_AGE_MS = 10_000;
+  // 刷新 UI 频率（排序 + 过期剔除）
+  const REFRESH_MS = 500;
+
   /** @type {BluetoothLEScan|null} */
   let scan = null;
 
-  // device.id => { row, lastSeenMs }
+  /** @type {number|null} */
+  let refreshTimer = null;
+
+  // 用 device.id 做“唯一键”（不显示在表格里）
+  // id => { tr, lastSeenMs, rssi, name }
   const rows = new Map();
 
   function log(msg) {
     const t = new Date().toLocaleString();
     logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+  }
+
+  function ensureRefreshTimer() {
+    if (refreshTimer !== null) return;
+    refreshTimer = window.setInterval(refreshView, REFRESH_MS);
+  }
+
+  function stopRefreshTimer() {
+    if (refreshTimer === null) return;
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
   }
 
   function upsertRow({ name, id, rssi }) {
@@ -72,21 +91,52 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td class="name"></td>
-        <td class="mono id"></td>
         <td class="mono rssi"></td>
         <td class="mono last"></td>
       `;
       tbody.appendChild(tr);
 
-      entry = { tr, lastSeenMs: now };
+      entry = { tr, lastSeenMs: now, rssi: undefined, name: "" };
       rows.set(id, entry);
     }
 
     entry.lastSeenMs = now;
-    entry.tr.querySelector(".name").textContent = name || "(无名称)";
-    entry.tr.querySelector(".id").textContent = id;
-    entry.tr.querySelector(".rssi").textContent = (typeof rssi === "number") ? `${rssi} dBm` : "(未知)";
+    entry.name = name || "(无名称)";
+    entry.rssi = (typeof rssi === "number") ? rssi : undefined;
+
+    entry.tr.querySelector(".name").textContent = entry.name;
+    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(未知)";
     entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
+
+    // 立刻触发一次排序/过期处理（更“跟手”）
+    refreshView();
+  }
+
+  function refreshView() {
+    const now = Date.now();
+
+    // 1) 剔除 10 秒未出现过的设备
+    for (const [id, entry] of rows.entries()) {
+      if (now - entry.lastSeenMs > MAX_AGE_MS) {
+        entry.tr.remove();
+        rows.delete(id);
+      }
+    }
+
+    // 2) 按 RSSI 自动排序（RSSI 越大越靠前，例如 -35 > -80）
+    const entries = Array.from(rows.values());
+    entries.sort((a, b) => {
+      const ar = (typeof a.rssi === "number") ? a.rssi : -Infinity;
+      const br = (typeof b.rssi === "number") ? b.rssi : -Infinity;
+      if (br !== ar) return br - ar;
+      // RSSI 相同就按最近出现时间
+      return b.lastSeenMs - a.lastSeenMs;
+    });
+
+    // 3) 重新按顺序挂载（appendChild 会移动已存在节点）
+    for (const e of entries) {
+      tbody.appendChild(e.tr);
+    }
   }
 
   function clearTable() {
@@ -104,9 +154,6 @@
     // 优先使用 Scanning API（能拿 RSSI）
     if (typeof navigator.bluetooth.requestLEScan === "function") {
       try {
-        // 你可以用 filters 限定更快更干净，例如：
-        // { filters: [{ namePrefix: "TYGER" }] }
-        // 或 { filters: [{ services: ["battery_service"] }] }
         scan = await navigator.bluetooth.requestLEScan({
           acceptAllAdvertisements: true
         });
@@ -114,6 +161,7 @@
         navigator.bluetooth.addEventListener("advertisementreceived", onAdv);
         btnStart.disabled = true;
         btnStop.disabled = false;
+        ensureRefreshTimer();
         log("开始扫描：requestLEScan 已启动（将持续接收周边广播事件）");
         return;
       } catch (e) {
@@ -130,9 +178,9 @@
         acceptAllDevices: true,
         optionalServices: []
       });
-      // 这里通常没有 RSSI；只显示名称和匿名 id
       upsertRow({ name: device.name, id: device.id, rssi: undefined });
-      log(`已选择设备：${device.name || "(无名称)"} / ${device.id}`);
+      ensureRefreshTimer();
+      log(`已选择设备：${device.name || "(无名称)"}`);
     } catch (e) {
       log("requestDevice 失败：" + (e?.message || e));
     }
@@ -147,12 +195,13 @@
     navigator.bluetooth.removeEventListener("advertisementreceived", onAdv);
     btnStart.disabled = false;
     btnStop.disabled = true;
-    log("已停止扫描");
+
+    // 仍然保留“10秒窗口”的衰减显示：停止扫描后，最多 10 秒列表会自动清空
+    ensureRefreshTimer();
+    log("已停止扫描（列表将仅保留最近10秒出现的设备）");
   }
 
   function onAdv(event) {
-    // event: BluetoothAdvertisingEvent
-    // 注意：device.id 不是 MAC；name 也可能为空
     const dev = event.device;
     upsertRow({
       name: dev?.name,
