@@ -49,8 +49,17 @@
     </div>
   </div>
 
+  <div class="row">
+    <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备）</div>
+    <input id="rssiInput" type="text" value="-80" />
+    <div class="subhint">
+      例如：<span class="mono">-60</span> 表示只显示信号强于 -60 dBm 的设备（-50 会显示，-70 不显示）。<br/>
+      留空或输入非数字将视为不过滤（等价于 -999）。
+    </div>
+  </div>
+
   <div>
-    <button id="btnStart">开始扫描</button>
+    <button id="btnStart">开始扫描</button>开始扫描</button>
     <button id="btnStop" disabled>停止扫描</button>
     <button id="btnClear">清空列表</button>
   </div>
@@ -78,6 +87,7 @@
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
   const svcInput = $("svcInput");
+  const rssiInput = $("rssiInput");
 
   // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
@@ -126,6 +136,20 @@
     user_data: "181C",
     weight_scale: "181D",
     continuous_glucose_monitoring: "181F"
+  }));
+
+  function getRssiThreshold() {
+    const v = (rssiInput && rssiInput.value != null) ? String(rssiInput.value).trim() : "";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return -999; // effectively no filter
+    return n;
+  }
+
+  function hasName(name) {
+    const s = String(name || "").trim();
+    return s.length > 0;
+  }
+
   }));
 
   function log(msg) {
@@ -347,7 +371,14 @@
         acceptAllDevices: true,
         optionalServices: getOptionalServices()
       });
-      upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
+      if (!hasName(device.name)) {
+        log("已选择设备但名称为空：按规则不加入列表");
+      } else {
+        // 该降级路径通常拿不到 RSSI；为严格遵循“RSSI阈值过滤”，这里不加入列表
+        log("提示：该浏览器不支持扫描 RSSI（requestDevice 降级路径），无法按 RSSI 阈值过滤；因此不加入列表");
+        // 若你希望降级路径也显示设备（RSSI 显示为未知），取消下一行注释：
+        // upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
+      }
       ensureRefreshTimer();
       log(`已选择设备：${device.name || "(无名称)"}`);
     } catch (e) {
@@ -369,10 +400,22 @@
 
   function onAdv(event) {
     const dev = event.device;
+
+    // 过滤掉“无名称”的设备
+    const name = dev?.name;
+    if (!hasName(name)) return;
+
+    // RSSI 过滤：只显示大于阈值的设备
+    const th = getRssiThreshold();
+    const rssi = event.rssi;
+    // 你的需求依赖 RSSI：rssi 缺失则不展示
+    if (typeof rssi !== "number") return;
+    if (rssi <= th) return;
+
     upsertRow({
-      name: dev?.name,
+      name,
       id: dev?.id || "(unknown-id)",
-      rssi: event.rssi,
+      rssi,
       advDevice: dev
     });
   }
