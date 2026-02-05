@@ -31,31 +31,17 @@
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
-    <b>你遇到的报错原因：</b>Web Bluetooth 要求你在 <span class="mono">requestDevice()</span> 时声明允许访问的服务（<span class="mono">optionalServices</span> 或 filters.services）。否则连接后访问任意服务都会被浏览器拦截。<br/>
-    <b>提示：</b>网页拿不到 BLE 的真实 MAC 地址（隐私限制）。<br/>
     <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在 <span class="mono">chrome://flags/#enable-experimental-web-platform-features</span> 开启实验特性。<br/>
-    <b>环境：</b>必须 HTTPS 或 localhost。
   </div>
 
   <div class="row">
     <div class="label">可访问服务（optionalServices，逗号分隔）</div>
     <input id="svcInput" type="text" value="1800,1801,fe59,180a,180f,6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
-    <div class="subhint">
-      支持三种写法：<br/>
-      1) 标准别名：<span class="mono">device_information</span> / <span class="mono">battery_service</span> …<br/>
-      2) 16-bit：<span class="mono">180A</span> 或 <span class="mono">0x180A</span><br/>
-      3) 128-bit UUID：<span class="mono">xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</span><br/>
-      <b>注意：</b>只能枚举/访问你在这里声明过的服务；想“列出所有服务”，在 Web 里做不到真正意义的“全量自动发现”（必须事先声明可访问的服务集合）。
-    </div>
   </div>
 
   <div class="row">
     <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备）</div>
     <input id="rssiInput" type="text" value="-80" />
-    <div class="subhint">
-      例如：<span class="mono">-60</span> 表示只显示信号强于 -60 dBm 的设备（-50 会显示，-70 不显示）。<br/>
-      留空或输入非数字将视为不过滤（等价于 -999）。
-    </div>
   </div>
 
   <div>
