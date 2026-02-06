@@ -298,6 +298,18 @@
     log("已清空列表（并尝试断开所有连接）");
   }
 
+  function focusOnEntry(keepEntry) {
+    for (const [id, entry] of rows.entries()) {
+      if (entry === keepEntry) continue;
+      entry.tr?.remove();
+      entry.detailsTr?.remove();
+      rows.delete(id);
+    }
+    // Ensure the kept entry is visible and at top
+    if (keepEntry?.tr) tbody.appendChild(keepEntry.tr);
+    if (keepEntry?.detailsTr) tbody.appendChild(keepEntry.detailsTr);
+  }
+
   function normalizeServiceToken(token) {
     // Return: null | { kind: 'name'|'uuid', value: string }
     const t = String(token || "").trim();
@@ -468,6 +480,10 @@
       entry.connecting = false;
       setButtonState(entry, "connected");
       log(`已连接：${device.name || "(无名称)"}`);
+
+      // 连接成功后停止扫描，仅保留当前设备
+      stopScan();
+      focusOnEntry(entry);
 
       await enumerateGATT(entry, server, optionalServices);
     } catch (e) {
