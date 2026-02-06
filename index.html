@@ -31,7 +31,12 @@
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
-    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在 <a class="mono" href="chrome://flags/#enable-experimental-web-platform-features" target="_blank" rel="noopener">chrome://flags/#enable-experimental-web-platform-features</a> 开启实验特性。<br/>
+    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在
+    <a class="mono" href="chrome://flags/#enable-experimental-web-platform-features" target="_blank" rel="noopener">chrome://flags/#enable-experimental-web-platform-features</a>
+    开启实验特性（该地址无法在网页内直接跳转，请复制后粘贴到地址栏）。
+    <button id="btnCopyFlags" class="btnSmall" type="button">复制链接</button>
+    <span id="copyStatus" class="subhint"></span>
+    <br/>
   </div>
 
   <div class="row">
@@ -72,6 +77,8 @@
   const btnStart = $("btnStart");
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
+  const btnCopyFlags = $("btnCopyFlags");
+  const copyStatus = $("copyStatus");
   const svcInput = $("svcInput");
   const rssiInput = $("rssiInput");
 
@@ -139,6 +146,16 @@
   function log(msg) {
     const t = new Date().toLocaleString();
     logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+  }
+
+  function setCopyStatus(msg, ok) {
+    if (!copyStatus) return;
+    copyStatus.textContent = msg;
+    copyStatus.className = ok ? "subhint ok" : "subhint err";
+    window.setTimeout(() => {
+      if (copyStatus) copyStatus.textContent = "";
+      if (copyStatus) copyStatus.className = "subhint";
+    }, 2000);
   }
 
   function ensureRefreshTimer() {
@@ -557,6 +574,29 @@
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
+  if (btnCopyFlags) {
+    btnCopyFlags.addEventListener("click", async () => {
+      const text = "chrome://flags/#enable-experimental-web-platform-features";
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "absolute";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+        setCopyStatus("已复制", true);
+      } catch (e) {
+        setCopyStatus("复制失败，请手动复制", false);
+      }
+    });
+  }
 
   log("页面已加载。请点击“开始扫描”。");
 })();
