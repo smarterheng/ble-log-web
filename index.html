@@ -245,7 +245,8 @@
         gattServer: null,
         connected: false,
         connecting: false,
-        nusNotifyChars: new Map()
+        nusNotifyChars: new Map(),
+        nusNotifyEnabled: new Set()
       };
       rows.set(id, entry);
     }
@@ -512,6 +513,7 @@
     entry.connecting = false;
     entry.gattServer = null;
     entry.nusNotifyChars = new Map();
+    entry.nusNotifyEnabled = new Set();
     setButtonState(entry, "idle");
     showDetails(entry, "(已断开)", true);
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
@@ -542,6 +544,7 @@
 
       const parts = [allowNote];
       entry.nusNotifyChars = new Map();
+      entry.nusNotifyEnabled = new Set();
       for (const svc of services) {
         let chars = null;
         try {
@@ -624,6 +627,10 @@
         const ch = entry.nusNotifyChars.get(uuid);
         if (!ch) continue;
         try {
+          if (entry.nusNotifyEnabled.has(uuid)) {
+            log(`Notify 已启用（忽略重复）：${uuid}`);
+            continue;
+          }
           await ch.startNotifications();
           ch.addEventListener("characteristicvaluechanged", (event) => {
             const dv = event.target.value;
@@ -636,7 +643,8 @@
               text = "";
             }
             log(`Notify(${uuid}) HEX: ${hex}${text ? " | TXT: " + text : ""}`);
-          }, { once: true });
+          });
+          entry.nusNotifyEnabled.add(uuid);
           log(`已启用 Notify：${uuid}`);
         } catch (e) {
           log(`启用 Notify 失败：${uuid} - ${e?.message || e}`);
