@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BLE 扫描（Web Bluetooth）示例</title>
+  <title>BLE 扫描 + NUS 串口终端（可配置）</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
     button { padding: 10px 14px; margin-right: 8px; }
@@ -25,28 +25,38 @@
     .chip { display: inline-block; padding: 2px 6px; border: 1px solid #ddd; border-radius: 999px; margin-left: 6px; font-size: 12px; color: #444; }
     .err { color: #b00020; }
     .ok  { color: #0a7a2f; }
+
+    /* NUS Terminal */
+    .termWrap { margin-top: 10px; border: 1px solid #ddd; border-radius: 10px; padding: 10px; }
+    .termHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .termTitle { font-weight: 700; }
+    .termBody { background: #0b1020; color: #d7e3ff; border-radius: 8px; padding: 10px; min-height: 120px; max-height: 260px; overflow: auto; white-space: pre-wrap; }
+    .termControls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .termControls input[type="text"] { flex: 1; min-width: 180px; }
+    .termMeta { font-size: 12px; color: #666; margin-top: 6px; line-height: 1.4; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; color:#444; }
   </style>
 </head>
 <body>
-  <h2>BLE 扫描（Web Bluetooth）</h2>
+  <h2>BLE 扫描 + NUS 串口终端（可配置）</h2>
 
   <div class="hint">
-    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在
-    <a class="mono" href="chrome://flags/#enable-experimental-web-platform-features" target="_blank" rel="noopener">chrome://flags/#enable-experimental-web-platform-features</a>
-    开启实验特性（该地址无法在网页内直接跳转，请复制后粘贴到地址栏）。
-    <button id="btnCopyFlags" class="btnSmall" type="button">复制链接</button>
-    <span id="copyStatus" class="subhint"></span>
-    <br/>
+    <b>环境：</b>必须 HTTPS 或 localhost。<br/>
+    <b>RSSI 扫描：</b>安卓 Chrome 通常需要开启实验特性：
+    <span class="mono">chrome://flags/#enable-experimental-web-platform-features</span>。<br/>
+    <b>注意：</b>Web 端拿不到 BLE 真实 MAC；访问 GATT 服务需要在 requestDevice 时声明 optionalServices。
   </div>
 
   <div class="row">
     <div class="label">可访问服务（optionalServices，逗号分隔）</div>
-    <input id="svcInput" type="text" value="6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
+    <input id="svcInput" type="text" value="1800,1801,fe59,180a,180f,6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
+    <div class="subhint">建议包含 NUS：<span class="mono">6e400001-b5a3-f393-e0a9-e50e24dcca9e</span></div>
   </div>
 
   <div class="row">
-    <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备）</div>
+    <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备；过滤掉无名称设备）</div>
     <input id="rssiInput" type="text" value="-80" />
+    <div class="subhint">例：-60 表示只显示信号强于 -60 dBm 的设备（-50 会显示，-70 不显示）</div>
   </div>
 
   <div>
@@ -77,64 +87,43 @@
   const btnStart = $("btnStart");
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
-  const btnCopyFlags = $("btnCopyFlags");
-  const copyStatus = $("copyStatus");
   const svcInput = $("svcInput");
   const rssiInput = $("rssiInput");
 
-  // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
-  // 刷新 UI 频率（排序 + 过期剔除）
   const REFRESH_MS = 500;
 
-  /** @type {BluetoothLEScan|null} */
+  const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_WRITE_UUID   = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_NOTIFY_UUID  = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
   let scan = null;
-
-  /** @type {number|null} */
   let refreshTimer = null;
-
-  // 用 device.id 做“唯一键”（不显示在表格里）
   const rows = new Map();
 
-  // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
-  // 这里给一些常见别名映射到 16-bit UUID，最终统一转成 128-bit 字符串。
   const NAME_TO_16BIT = new Map(Object.entries({
     generic_access: "1800",
     generic_attribute: "1801",
-    immediate_alert: "1802",
-    link_loss: "1803",
-    tx_power: "1804",
-    current_time: "1805",
-    reference_time_update: "1806",
-    next_dst_change: "1807",
-    glucose: "1808",
-    health_thermometer: "1809",
     device_information: "180A",
-    heart_rate: "180D",
-    phone_alert_status: "180E",
     battery_service: "180F",
     secure_dfu: "FE59",
-    secure_dfu_service: "FE59",
-    blood_pressure: "1810",
-    alert_notification: "1811",
-    human_interface_device: "1812",
-    scan_parameters: "1813",
-    running_speed_and_cadence: "1814",
-    automation_io: "1815",
-    cycling_speed_and_cadence: "1816",
-    cycling_power: "1818",
-    location_and_navigation: "1819",
-    environmental_sensing: "181A",
-    body_composition: "181B",
-    user_data: "181C",
-    weight_scale: "181D",
-    continuous_glucose_monitoring: "181F"
+    secure_dfu_service: "FE59"
   }));
+
+  function log(msg) {
+    const t = new Date().toLocaleString();
+    logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+  }
+
+  function ensureRefreshTimer() {
+    if (refreshTimer !== null) return;
+    refreshTimer = window.setInterval(refreshView, REFRESH_MS);
+  }
 
   function getRssiThreshold() {
     const v = (rssiInput && rssiInput.value != null) ? String(rssiInput.value).trim() : "";
     const n = Number(v);
-    if (!Number.isFinite(n)) return -999; // effectively no filter
+    if (!Number.isFinite(n)) return -999;
     return n;
   }
 
@@ -143,25 +132,10 @@
     return s.length > 0;
   }
 
-  function log(msg) {
-    const t = new Date().toLocaleString();
-    logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+  function uuidEq(a, b) {
+    return String(a||"").toLowerCase() === String(b||"").toLowerCase();
   }
-
-  function setCopyStatus(msg, ok) {
-    if (!copyStatus) return;
-    copyStatus.textContent = msg;
-    copyStatus.className = ok ? "subhint ok" : "subhint err";
-    window.setTimeout(() => {
-      if (copyStatus) copyStatus.textContent = "";
-      if (copyStatus) copyStatus.className = "subhint";
-    }, 2000);
-  }
-
-  function ensureRefreshTimer() {
-    if (refreshTimer !== null) return;
-    refreshTimer = window.setInterval(refreshView, REFRESH_MS);
-  }
+  function isNusServiceUuid(u) { return uuidEq(u, NUS_SERVICE_UUID); }
 
   function setButtonState(entry, state) {
     const btn = entry.tr?.querySelector("button.connect");
@@ -195,7 +169,7 @@
       <td class="mono rssi"></td>
       <td class="mono last"></td>
       <td>
-        <button class="btnSmall connect">连接</button>
+        <button class="btnSmall connect" type="button">连接</button>
         <span class="chip status"></span>
       </td>
     `;
@@ -215,11 +189,8 @@
     entry.detailsTr = detailsTr;
 
     tr.querySelector("button.connect").addEventListener("click", async () => {
-      if (entry.connected) {
-        await disconnectEntry(entry);
-      } else {
-        await connectEntry(entry);
-      }
+      if (entry.connected) await disconnectEntry(entry);
+      else await connectEntry(entry);
     });
 
     tbody.appendChild(tr);
@@ -240,7 +211,8 @@
         grantedDevice: null,
         gattServer: null,
         connected: false,
-        connecting: false
+        connecting: false,
+        nus: null
       };
       rows.set(id, entry);
     }
@@ -261,8 +233,6 @@
 
   function refreshView() {
     const now = Date.now();
-
-    // 1) 剔除 10 秒未出现过的设备（已连接的不剔除）
     for (const [id, entry] of rows.entries()) {
       if (entry.connected) continue;
       if (now - entry.lastSeenMs > MAX_AGE_MS) {
@@ -272,7 +242,6 @@
       }
     }
 
-    // 2) 按 RSSI 自动排序（RSSI 越大越靠前）
     const entries = Array.from(rows.values());
     entries.sort((a, b) => {
       const ar = (typeof a.rssi === "number") ? a.rssi : -Infinity;
@@ -281,7 +250,6 @@
       return b.lastSeenMs - a.lastSeenMs;
     });
 
-    // 3) 重新按顺序挂载
     for (const e of entries) {
       tbody.appendChild(e.tr);
       tbody.appendChild(e.detailsTr);
@@ -305,31 +273,25 @@
       entry.detailsTr?.remove();
       rows.delete(id);
     }
-    // Ensure the kept entry is visible and at top
     if (keepEntry?.tr) tbody.appendChild(keepEntry.tr);
     if (keepEntry?.detailsTr) tbody.appendChild(keepEntry.detailsTr);
   }
 
   function normalizeServiceToken(token) {
-    // Return: null | { kind: 'name'|'uuid', value: string }
     const t = String(token || "").trim();
     if (!t) return null;
 
-    // 128-bit UUID
     if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(t)) {
       return { kind: "uuid", value: t.toLowerCase() };
     }
 
-    // 0x180A or 180A
     let hex = t.toLowerCase();
     if (hex.startsWith("0x")) hex = hex.slice(2);
     if (/^[0-9a-f]{4}$/.test(hex)) {
-      // Convert 16-bit -> 128-bit base UUID
       const full = `0000${hex}-0000-1000-8000-00805f9b34fb`;
       return { kind: "uuid", value: full };
     }
 
-    // name alias
     const key = t.toLowerCase().replace(/\s+/g, "_");
     if (NAME_TO_16BIT.has(key)) {
       const h = NAME_TO_16BIT.get(key).toLowerCase();
@@ -337,8 +299,6 @@
       return { kind: "uuid", value: full };
     }
 
-    // As a fallback, let browser handle standard names if it supports them:
-    // (some implementations accept strings like 'battery_service')
     return { kind: "name", value: key };
   }
 
@@ -351,7 +311,6 @@
       if (!r) continue;
       normalized.push(r.value);
     }
-    // de-dup
     return Array.from(new Set(normalized));
   }
 
@@ -378,20 +337,13 @@
       log("当前浏览器没有 requestLEScan（Scanning API 不可用）。尝试降级到 requestDevice。");
     }
 
-    // 降级：requestDevice（不是“被动扫描所有广播”）
     try {
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: getOptionalServices()
       });
-      if (!hasName(device.name)) {
-        log("已选择设备但名称为空：按规则不加入列表");
-      } else {
-        // 该降级路径通常拿不到 RSSI；为严格遵循“RSSI阈值过滤”，这里不加入列表
-        log("提示：该浏览器不支持扫描 RSSI（requestDevice 降级路径），无法按 RSSI 阈值过滤；因此不加入列表");
-        // 若你希望降级路径也显示设备（RSSI 显示为未知），取消下一行注释：
-        // upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
-      }
+      if (!hasName(device.name)) log("已选择设备但名称为空：按规则不加入列表");
+      else log("提示：requestDevice 降级路径通常拿不到 RSSI；为遵循 RSSI 过滤，这里不加入列表");
       ensureRefreshTimer();
       log(`已选择设备：${device.name || "(无名称)"}`);
     } catch (e) {
@@ -414,23 +366,15 @@
   function onAdv(event) {
     const dev = event.device;
 
-    // 过滤掉“无名称”的设备
     const name = dev?.name;
     if (!hasName(name)) return;
 
-    // RSSI 过滤：只显示大于阈值的设备
     const th = getRssiThreshold();
     const rssi = event.rssi;
-    // 你的需求依赖 RSSI：rssi 缺失则不展示
     if (typeof rssi !== "number") return;
     if (rssi <= th) return;
 
-    upsertRow({
-      name,
-      id: dev?.id || "(unknown-id)",
-      rssi,
-      advDevice: dev
-    });
+    upsertRow({ name, id: dev?.id || "(unknown-id)", rssi, advDevice: dev });
   }
 
   async function connectEntry(entry) {
@@ -445,23 +389,10 @@
 
     try {
       const optionalServices = getOptionalServices();
-      if (optionalServices.length === 0) {
-        log("提示：optionalServices 为空，连接后无法枚举服务。请在上方输入要访问的服务 UUID/别名。");
-      }
-
-      // 点击“连接”时使用 requestDevice() 走一次“用户选择授权”
-      let device = null;
-      if (entry.name && entry.name !== "(无名称)") {
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: entry.name }],
-          optionalServices
-        });
-      } else {
-        device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices
-        });
-      }
+      let device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: entry.name }],
+        optionalServices
+      });
 
       entry.grantedDevice = device;
 
@@ -469,6 +400,7 @@
         entry.connected = false;
         entry.connecting = false;
         entry.gattServer = null;
+        entry.nus = null;
         setButtonState(entry, "idle");
         showDetails(entry, "(已断开)", true);
         log(`设备断开：${device.name || "(无名称)"}`);
@@ -481,7 +413,6 @@
       setButtonState(entry, "connected");
       log(`已连接：${device.name || "(无名称)"}`);
 
-      // 连接成功后停止扫描，仅保留当前设备
       stopScan();
       focusOnEntry(entry);
 
@@ -490,6 +421,7 @@
       entry.connecting = false;
       entry.connected = false;
       entry.gattServer = null;
+      entry.nus = null;
       setButtonState(entry, "idle");
       showDetails(entry, `<span class="err">连接/枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
       log("连接/枚举失败：" + (e?.message || e));
@@ -505,6 +437,7 @@
     entry.connected = false;
     entry.connecting = false;
     entry.gattServer = null;
+    entry.nus = null;
     setButtonState(entry, "idle");
     showDetails(entry, "(已断开)", true);
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
@@ -519,9 +452,178 @@
     if (details && open) details.open = true;
   }
 
+  function fmtHex(u8) { return Array.from(u8).map(b => b.toString(16).padStart(2, "0")).join(" "); }
+
+  function appendTerm(entry, line) {
+    const el = entry?.nus?.termEl;
+    if (!el) return;
+    el.textContent += line + "\n";
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function writeChunked(ch, data, withoutResponse) {
+    const CHUNK = 20;
+    for (let off = 0; off < data.length; off += CHUNK) {
+      const slice = data.slice(off, off + CHUNK);
+      if (withoutResponse && ch.writeValueWithoutResponse) await ch.writeValueWithoutResponse(slice);
+      else await ch.writeValue(slice);
+      await new Promise(r => setTimeout(r, 10));
+    }
+  }
+
+  async function setupNusTerminal(entry) {
+    if (!entry?.nus) return;
+    const wrap = entry.detailsTr?.querySelector(".nusWrap");
+    if (!wrap) return;
+
+    entry.nus.termEl = wrap.querySelector(".termBody");
+    const input = wrap.querySelector(".termInput");
+    const btnSend = wrap.querySelector(".termSend");
+    const btnClear = wrap.querySelector(".termClear");
+
+    const btnSub = wrap.querySelector(".nusSub");
+    const btnUnsub = wrap.querySelector(".nusUnsub");
+
+    const chkHexRx = wrap.querySelector(".termHexRx");
+    const chkSendHex = wrap.querySelector(".termSendHex");
+    const chkNoRsp = wrap.querySelector(".termNoRsp");
+    const chkCrlf = wrap.querySelector(".termCrlf");
+    const chkLf = wrap.querySelector(".termLf");
+
+    const writeChar = entry.nus.writeChar;
+    const allNotify = entry.nus.notifyChars || [];
+    entry.nus.subscribed = new Map(); // uuid -> { ch, handler }
+
+    const decoder = new TextDecoder("utf-8");
+
+    function parseHexString(s) {
+      const t = String(s || "").trim();
+      if (!t) return null;
+      let bytes = [];
+      if (/\s/.test(t)) {
+        const toks = t.split(/\s+/).filter(Boolean).map(x => x.toLowerCase().replace(/^0x/, ""));
+        for (const tok of toks) {
+          if (!/^[0-9a-f]{2}$/.test(tok)) return null;
+          bytes.push(parseInt(tok, 16));
+        }
+      } else {
+        const hex = t.toLowerCase().replace(/^0x/, "");
+        if (hex.length % 2 !== 0) return null;
+        if (!/^[0-9a-f]+$/.test(hex)) return null;
+        for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.slice(i, i + 2), 16));
+      }
+      return new Uint8Array(bytes);
+    }
+
+    function getSelectedNotifyUuids() {
+      const cbs = Array.from(wrap.querySelectorAll("input.nusNotifySel"));
+      return cbs.filter(cb => cb.checked).map(cb => cb.getAttribute("data-uuid"));
+    }
+
+    async function subscribeSelected() {
+      const selected = getSelectedNotifyUuids().filter(Boolean);
+      if (!selected.length) {
+        appendTerm(entry, "[INFO] 未选中任何 notify 特征");
+        return;
+      }
+
+      for (const uuid of selected) {
+        if (entry.nus.subscribed.has(uuid)) {
+          appendTerm(entry, `[INFO] 已订阅（跳过）：${uuid}`);
+          continue;
+        }
+        const ch = allNotify.find(x => x.uuid.toLowerCase() === String(uuid).toLowerCase());
+        if (!ch) {
+          appendTerm(entry, `[ERR] 未找到该 notify 特征：${uuid}`);
+          continue;
+        }
+
+        try {
+          await ch.startNotifications();
+          const handler = (ev) => {
+            const dv = ev.target.value;
+            const u8 = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+            const asText = (() => { try { return decoder.decode(u8); } catch { return ""; } })();
+            const asHex = fmtHex(u8);
+            const tag = ch.uuid.toLowerCase().slice(0, 8);
+            if (chkHexRx && chkHexRx.checked) appendTerm(entry, `[RX ${tag}] ${asHex}`);
+            else appendTerm(entry, `[RX ${tag}] ${asText || asHex}`);
+          };
+          ch.addEventListener("characteristicvaluechanged", handler);
+          entry.nus.subscribed.set(uuid, { ch, handler });
+          appendTerm(entry, `[INFO] 已订阅 notify: ${ch.uuid}`);
+        } catch (e) {
+          appendTerm(entry, `[ERR] 订阅 notify 失败: ${uuid} / ${e?.message || e}`);
+        }
+      }
+    }
+
+    async function unsubscribeAll() {
+      for (const [uuid, rec] of entry.nus.subscribed.entries()) {
+        try {
+          rec.ch.removeEventListener("characteristicvaluechanged", rec.handler);
+          if (rec.ch.stopNotifications) await rec.ch.stopNotifications();
+          appendTerm(entry, `[INFO] 已取消订阅: ${uuid}`);
+        } catch (e) {
+          appendTerm(entry, `[ERR] 取消订阅失败: ${uuid} / ${e?.message || e}`);
+        }
+      }
+      entry.nus.subscribed.clear();
+    }
+
+    if (!writeChar) {
+      appendTerm(entry, "[ERR] 未找到可写 Characteristic（NUS RX）");
+      if (btnSend) btnSend.disabled = true;
+    } else {
+      appendTerm(entry, `[INFO] 可写 characteristic: ${writeChar.uuid}`);
+    }
+
+    if (btnClear) btnClear.addEventListener("click", () => { if (entry?.nus?.termEl) entry.nus.termEl.textContent = ""; });
+    if (btnSub) btnSub.addEventListener("click", () => subscribeSelected());
+    if (btnUnsub) btnUnsub.addEventListener("click", () => unsubscribeAll());
+
+    if (btnSend) {
+      btnSend.addEventListener("click", async () => {
+        const raw = String(input?.value || "");
+        if (!raw || !writeChar) return;
+
+        try {
+          let data = null;
+
+          if (chkSendHex && chkSendHex.checked) {
+            const u8 = parseHexString(raw);
+            if (!u8) { appendTerm(entry, "[ERR] HEX 格式不合法。示例：01 ff 0a 或 01ff0a"); return; }
+            data = u8;
+          } else {
+            let text = raw;
+            const crlf = !!(chkCrlf && chkCrlf.checked);
+            const lf = !!(chkLf && chkLf.checked);
+            if (crlf) text += "\r\n";
+            else if (lf) text += "\n";
+            data = new TextEncoder().encode(text);
+          }
+
+          const withoutResponse = !!(chkNoRsp && chkNoRsp.checked);
+          await writeChunked(writeChar, data, withoutResponse);
+
+          if (chkSendHex && chkSendHex.checked) appendTerm(entry, `[TX HEX] ${fmtHex(data)}`);
+          else appendTerm(entry, `[TX] ${raw}`);
+
+          if (input) input.value = "";
+        } catch (e) {
+          appendTerm(entry, `[ERR] 发送失败: ${e?.message || e}`);
+        }
+      });
+    }
+
+    if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") btnSend?.click(); });
+
+    const selected = getSelectedNotifyUuids();
+    if (selected.length) appendTerm(entry, `[INFO] 已默认选中 notify：${selected.join(", ")}（点击“订阅选中”开始接收）`);
+  }
+
   async function enumerateGATT(entry, server, optionalServices) {
     try {
-      // getPrimaryServices() 只会返回“本 origin 被允许访问”的 services
       const services = await server.getPrimaryServices();
       const allowNote = optionalServices?.length
         ? `<div class="subhint">当前允许访问的服务数量：<span class="mono">${optionalServices.length}</span>（只会显示这些范围内能访问到的服务）</div>`
@@ -533,15 +635,31 @@
       }
 
       const parts = [allowNote];
+
       for (const svc of services) {
         let chars = null;
-        try {
-          chars = await svc.getCharacteristics();
-        } catch (e) {
-          chars = null;
+        try { chars = await svc.getCharacteristics(); } catch (e) { chars = null; }
+        const svcUuid = svc.uuid;
+
+        let isNus = false;
+        let nusWrite = null;
+        let nusNotifies = [];
+
+        if (isNusServiceUuid(svcUuid)) {
+          isNus = true;
+          if (chars && chars.length) {
+            for (const ch of chars) {
+              const p = ch.properties;
+              const cu = (ch.uuid || "").toLowerCase();
+              if ((p.write || p.writeWithoutResponse) && !nusWrite) nusWrite = ch;
+              if ((p.notify || p.indicate)) nusNotifies.push(ch);
+              if (uuidEq(cu, NUS_WRITE_UUID)) nusWrite = ch;
+              if (uuidEq(cu, NUS_NOTIFY_UUID)) nusNotifies = [ch, ...nusNotifies.filter(x => x !== ch)];
+            }
+          }
+          entry.nus = { serviceUuid: svcUuid, writeChar: nusWrite, notifyChars: nusNotifies, termEl: null, subscribed: null };
         }
 
-        const svcUuid = svc.uuid;
         let svcBlock = `<div class="svc"><div class="svcTitle">Service: <span class="mono">${escapeHtml(svcUuid)}</span></div>`;
         if (!chars) {
           svcBlock += `<div class="err">无法读取 Characteristics（可能未将该服务加入 optionalServices 或设备限制）</div>`;
@@ -566,11 +684,67 @@
           }
           svcBlock += `</ul>`;
         }
+
+        if (isNus) {
+          const w = entry.nus?.writeChar?.uuid || "(未找到)";
+          const nList = (entry.nus?.notifyChars || []).map(x => x.uuid);
+          const n = nList.join(", ") || "(未找到)";
+          const nItems = nList.map((u, idx) => {
+            const checked = (idx === 0) ? "checked" : "";
+            return `<label style="display:block;margin:2px 0;"><input type="checkbox" class="nusNotifySel" data-uuid="${escapeHtml(u)}" ${checked}/> <span class="mono">${escapeHtml(u)}</span></label>`;
+          }).join("") || `<div class="subhint err">未发现 notify 特征</div>`;
+
+          svcBlock += `
+            <div class="termWrap nusWrap">
+              <div class="termHead">
+                <div class="termTitle">NUS 串口终端</div>
+                <span class="pill">可配置</span>
+              </div>
+
+              <div class="termMeta">
+                <div class="subhint">Write: <span class="mono">${escapeHtml(w)}</span></div>
+                <div class="subhint">Notify: <span class="mono">${escapeHtml(n)}</span></div>
+              </div>
+
+              <div class="termMeta" style="margin-top:8px;">
+                <div class="label" style="font-weight:600;margin-bottom:6px;">Notify 订阅（可选）</div>
+                <div class="nusNotifyList">${nItems}</div>
+                <div class="termControls" style="margin-top:8px;">
+                  <button class="btnSmall nusSub" type="button">订阅选中</button>
+                  <button class="btnSmall nusUnsub" type="button">取消订阅</button>
+                  <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" class="termHexRx" /> RX 以 HEX 显示</label>
+                </div>
+              </div>
+
+              <div class="termBody"></div>
+
+              <div class="termControls">
+                <input class="termInput" type="text" placeholder="输入要发送的文本或 HEX（如：01 ff 0a），回车发送" />
+                <button class="btnSmall termSend" type="button">发送</button>
+                <button class="btnSmall termClear" type="button">清空</button>
+              </div>
+
+              <div class="termMeta">
+                <label style="margin-right:12px;"><input type="checkbox" class="termSendHex" /> 发送 HEX</label>
+                <label style="margin-right:12px;"><input type="checkbox" class="termNoRsp" checked /> writeWithoutResponse</label>
+                <label style="margin-right:12px;"><input type="checkbox" class="termCrlf" /> 追加 \r\n</label>
+                <label><input type="checkbox" class="termLf" /> 追加 \n</label>
+                <div class="subhint">说明：默认按 UTF-8 发送文本；长数据会按 20 bytes 分包写入。</div>
+              </div>
+            </div>
+          `;
+        }
+
         svcBlock += `</div>`;
         parts.push(svcBlock);
       }
 
       showDetails(entry, parts.join(""), true);
+
+      if (entry.nus) {
+        await setupNusTerminal(entry);
+        log("已识别 NUS：终端已就绪（默认不自动订阅 notify）");
+      }
     } catch (e) {
       showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
       log("枚举服务失败：" + (e?.message || e));
@@ -590,29 +764,6 @@
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
-  if (btnCopyFlags) {
-    btnCopyFlags.addEventListener("click", async () => {
-      const text = "chrome://flags/#enable-experimental-web-platform-features";
-      try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-          await navigator.clipboard.writeText(text);
-        } else {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.setAttribute("readonly", "");
-          ta.style.position = "absolute";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          ta.remove();
-        }
-        setCopyStatus("已复制", true);
-      } catch (e) {
-        setCopyStatus("复制失败，请手动复制", false);
-      }
-    });
-  }
 
   log("页面已加载。请点击“开始扫描”。");
 })();
