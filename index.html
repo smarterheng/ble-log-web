@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BLE 扫描（Web Bluetooth）示例</title>
+  <title>G30 remote log terminal</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
     button { padding: 10px 14px; margin-right: 8px; }
@@ -53,7 +53,6 @@
     <button id="btnStart">开始扫描</button>
     <button id="btnStop" disabled>停止扫描</button>
     <button id="btnClear">清空列表</button>
-    <button id="btnEnableNotify" class="btnSmall">启用Notify</button>
     <label for="notifyFormat" class="subhint">Notify输出：</label>
     <select id="notifyFormat" class="btnSmall">
       <option value="hex">Hex</option>
@@ -83,7 +82,6 @@
   const btnStart = $("btnStart");
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
-  const btnEnableNotify = $("btnEnableNotify");
   const notifyFormat = $("notifyFormat");
   const btnCopyFlags = $("btnCopyFlags");
   const copyStatus = $("copyStatus");
@@ -104,6 +102,11 @@
   // 用 device.id 做“唯一键”（不显示在表格里）
   const rows = new Map();
   const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_NOTIFY_UUIDS = [
+    "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
+    "6e400004-b5a3-f393-e0a9-e50e24dcca9e",
+    "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
+  ];
   let activeEntry = null;
 
   // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
@@ -160,6 +163,58 @@
 
   function bleLog(content) {
     logEl.textContent = `${content}\n` + logEl.textContent;
+  }
+
+  function bindNotifyListener(ch) {
+    ch.addEventListener("characteristicvaluechanged", (event) => {
+      const dv = event.target.value;
+      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      const mode = notifyFormat?.value === "text" ? "text" : "hex";
+      if (mode === "hex") {
+        const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+        bleLog(hex);
+        return;
+      }
+      let text = "";
+      try {
+        text = new TextDecoder().decode(bytes);
+      } catch (_) {
+        text = "";
+      }
+      bleLog(text);
+    });
+  }
+
+  async function enableAutoNusNotify(entry) {
+    if (!entry?.connected) return;
+
+    let enabledCount = 0;
+    let foundAny = false;
+    for (const uuid of NUS_NOTIFY_UUIDS) {
+      const key = uuid.toLowerCase();
+      const ch = entry.nusNotifyChars.get(key);
+      if (!ch) continue;
+      foundAny = true;
+      if (entry.nusNotifyEnabled.has(key)) continue;
+      try {
+        await ch.startNotifications();
+        bindNotifyListener(ch);
+        entry.nusNotifyEnabled.add(key);
+        enabledCount += 1;
+      } catch (e) {
+        log(`自动启用 Notify 失败：${uuid} - ${e?.message || e}`);
+      }
+    }
+
+    if (!foundAny) {
+      log("未发现 NUS 目标 Notify Characteristic");
+      return;
+    }
+    if (enabledCount > 0) {
+      log(`已自动启用 NUS Notify：${enabledCount} 个`);
+    } else {
+      log("NUS Notify 已是启用状态");
+    }
   }
 
   function setCopyStatus(msg, ok) {
@@ -503,6 +558,7 @@
       activeEntry = entry;
 
       await enumerateGATT(entry, server, optionalServices);
+      await enableAutoNusNotify(entry);
     } catch (e) {
       entry.connecting = false;
       entry.connected = false;
@@ -583,11 +639,10 @@
 
             const isNusNotify = (svcUuid.toLowerCase() === NUS_SERVICE_UUID) && !!p.notify;
             if (isNusNotify) {
-              entry.nusNotifyChars.set(ch.uuid, ch);
+              entry.nusNotifyChars.set(ch.uuid.toLowerCase(), ch);
             }
 
             svcBlock += `<li>
-              ${isNusNotify ? `<input type="checkbox" class="nusNotify" data-uuid="${escapeHtml(ch.uuid)}" /> ` : ""}
               <span>Characteristic: <span class="mono">${escapeHtml(ch.uuid)}</span></span>
               <span class="chip">${escapeHtml(props.join(", ") || "no-props")}</span>
             </li>`;
@@ -618,56 +673,6 @@
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
-  if (btnEnableNotify) {
-    btnEnableNotify.addEventListener("click", async () => {
-      const entry = activeEntry;
-      if (!entry || !entry.connected || !entry.detailsTr) {
-        log("未连接设备，无法启用 Notify");
-        return;
-      }
-
-      const checks = entry.detailsTr.querySelectorAll("input.nusNotify:checked");
-      if (!checks || checks.length === 0) {
-        log("未选择任何 NUS Notify Characteristic");
-        return;
-      }
-
-      for (const el of checks) {
-        const uuid = el.getAttribute("data-uuid");
-        const ch = entry.nusNotifyChars.get(uuid);
-        if (!ch) continue;
-        try {
-          if (entry.nusNotifyEnabled.has(uuid)) {
-            log(`Notify 已启用（忽略重复）：${uuid}`);
-            continue;
-          }
-          await ch.startNotifications();
-          ch.addEventListener("characteristicvaluechanged", (event) => {
-            const dv = event.target.value;
-            const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-            const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
-            const mode = notifyFormat?.value === "text" ? "text" : "hex";
-            if (mode === "hex") {
-              bleLog(hex);
-              return;
-            }
-
-            let text = "";
-            try {
-              text = new TextDecoder().decode(bytes);
-            } catch (_) {
-              text = "";
-            }
-            bleLog(text);
-          });
-          entry.nusNotifyEnabled.add(uuid);
-          log(`已启用 Notify：${uuid}`);
-        } catch (e) {
-          log(`启用 Notify 失败：${uuid} - ${e?.message || e}`);
-        }
-      }
-    });
-  }
   if (btnCopyFlags) {
     btnCopyFlags.addEventListener("click", async () => {
       const text = "chrome://flags/#enable-experimental-web-platform-features";
