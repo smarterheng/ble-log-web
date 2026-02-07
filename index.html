@@ -158,6 +158,10 @@
     logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
   }
 
+  function bleLog(content) {
+    logEl.textContent = `${content}\n` + logEl.textContent;
+  }
+
   function setCopyStatus(msg, ok) {
     if (!copyStatus) return;
     copyStatus.textContent = msg;
@@ -644,7 +648,7 @@
             const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join(" ");
             const mode = notifyFormat?.value === "text" ? "text" : "hex";
             if (mode === "hex") {
-              log(`Notify(${uuid}) HEX: ${hex}`);
+              bleLog(hex);
               return;
             }
 
@@ -654,7 +658,7 @@
             } catch (_) {
               text = "";
             }
-            log(`Notify(${uuid}) TXT: ${text}`);
+            bleLog(text);
           });
           entry.nusNotifyEnabled.add(uuid);
           log(`已启用 Notify：${uuid}`);
