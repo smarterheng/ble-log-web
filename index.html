@@ -198,10 +198,10 @@
     logEl.textContent = `${content}\n` + logEl.textContent;
   }
 
-  function dataViewToHex(dataView) {
+  function dataViewToAscii(dataView) {
     if (!dataView) return "";
     const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
-    return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+    return Array.from(bytes).map((b) => String.fromCharCode(b)).join("");
   }
 
   function parseManufacturerData(dataMap) {
@@ -211,7 +211,7 @@
       const companyIdHex = `0x${Number(companyId).toString(16).padStart(4, "0")}`;
       list.push({
         companyId: companyIdHex,
-        dataHex: dataViewToHex(dataView)
+        dataAscii: dataViewToAscii(dataView)
       });
     });
     return list;
@@ -383,10 +383,10 @@
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
     const mfgEl = entry.tr.querySelector(".mfgLine");
-    const mfgHex = (entry.manufacturerData || []).map((item) => item.dataHex).filter(Boolean).join(" | ");
+    const mfgText = (entry.manufacturerData || []).map((item) => item.dataAscii).filter(Boolean).join("");
     if (mfgEl) {
-      if (mfgHex) {
-        mfgEl.textContent = mfgHex;
+      if (mfgText) {
+        mfgEl.textContent = mfgText;
         mfgEl.style.display = "";
       } else {
         mfgEl.textContent = "";
