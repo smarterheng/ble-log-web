@@ -15,9 +15,9 @@
     }
     * { box-sizing: border-box; }
     body { font-family: "Segoe UI", "Noto Sans SC", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
-    .topBar { background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; }
+    .topBar { display: none; }
     body > h2 { display: none; }
-    .pageTitle { display: block; margin: 0; padding: 16px; background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; font-size: 38px; font-weight: 700; letter-spacing: .2px; }
+    .pageTitle { display: block; margin: 0; padding: 10px 16px; background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; font-size: 24px; font-weight: 700; letter-spacing: .2px; }
     .topMain { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
     .topMain h2 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; letter-spacing: .2px; }
     .topIcon { width: 32px; text-align: center; font-size: 22px; line-height: 1; }
@@ -66,39 +66,34 @@
 </head>
 <body>
   <h2 class="pageTitle">Devices</h2>
-  <div class="topBar">
-    <div class="tabs">
-      <span class="active">Scanner</span>
-      <span>Bonded</span>
-      <span>Advertiser</span>
-    </div>
-  </div>
-  <h2>BLE 扫描（Web Bluetooth）</h2>
+  <h2>BLE 鎵弿锛圵eb Bluetooth锛?/h2>
 
   <div class="hint">
-    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在
+    <b>RSSI 鎵弿锛?/b>闇€瑕?Chrome(瀹夊崜) 骞堕€氬父瑕佸湪
     <a class="mono" href="chrome://flags/#enable-experimental-web-platform-features" target="_blank" rel="noopener">chrome://flags/#enable-experimental-web-platform-features</a>
-    开启实验特性（该地址无法在网页内直接跳转，请复制后粘贴到地址栏）。
-    <button id="btnCopyFlags" class="btnSmall" type="button">复制链接</button>
+    寮€鍚疄楠岀壒鎬э紙璇ュ湴鍧€鏃犳硶鍦ㄧ綉椤靛唴鐩存帴璺宠浆锛岃澶嶅埗鍚庣矘璐村埌鍦板潃鏍忥級銆?    <button id="btnCopyFlags" class="btnSmall" type="button">澶嶅埗閾炬帴</button>
     <span id="copyStatus" class="subhint"></span>
     <br/>
   </div>
 
   <div class="row">
-    <div class="label">可访问服务（optionalServices，逗号分隔）</div>
+    <div class="label">鍙闂湇鍔★紙optionalServices锛岄€楀彿鍒嗛殧锛?/div>
     <input id="svcInput" type="text" value="6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
   </div>
 
   <div class="row">
-    <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备）</div>
+    <div class="label">RSSI 杩囨护闃堝€硷紙dBm锛屼粎鏄剧ず澶т簬璇ュ€肩殑璁惧锛?/div>
     <input id="rssiInput" type="text" value="-80" />
   </div>
 
   <div class="actions">
-    <button id="btnStart">开始扫描</button>
-    <button id="btnStop" disabled>停止扫描</button>
-    <button id="btnClear">清空列表</button>
-    <label for="notifyFormat" class="subhint">Notify输出：</label>
+    <button id="btnStart">寮€濮嬫壂鎻?/button>
+    <button id="btnStop" disabled>鍋滄鎵弿</button>
+    <button id="btnClear">娓呯┖鍒楄〃</button>
+  </div>
+
+  <div class="row">
+    <div class="label">Notify输出：</div>
     <select id="notifyFormat" class="btnSmall">
       <option value="hex">Hex</option>
       <option value="text" selected>Text</option>
@@ -108,10 +103,10 @@
   <table>
     <thead>
       <tr>
-        <th>名称</th>
+        <th>鍚嶇О</th>
         <th>RSSI</th>
-        <th>最近一次出现</th>
-        <th>操作</th>
+        <th>鏈€杩戜竴娆″嚭鐜?/th>
+        <th>鎿嶄綔</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -133,10 +128,8 @@
   const svcInput = $("svcInput");
   const rssiInput = $("rssiInput");
 
-  // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
-  const MAX_AGE_MS = 10_000;
-  // 刷新 UI 频率（排序 + 过期剔除）
-  const REFRESH_MS = 500;
+  // 鍙樉绀烘渶杩?10 绉掑嚭鐜拌繃鐨勮澶囷紙宸茶繛鎺ヨ澶囦笉浼氳鑷姩鍓旈櫎锛?  const MAX_AGE_MS = 10_000;
+  // 鍒锋柊 UI 棰戠巼锛堟帓搴?+ 杩囨湡鍓旈櫎锛?  const REFRESH_MS = 500;
 
   /** @type {BluetoothLEScan|null} */
   let scan = null;
@@ -144,7 +137,7 @@
   /** @type {number|null} */
   let refreshTimer = null;
 
-  // 用 device.id 做“唯一键”（不显示在表格里）
+  // 鐢?device.id 鍋氣€滃敮涓€閿€濓紙涓嶆樉绀哄湪琛ㄦ牸閲岋級
   const rows = new Map();
   const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_UUIDS = [
@@ -154,9 +147,7 @@
   ];
   let activeEntry = null;
 
-  // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
-  // 这里给一些常见别名映射到 16-bit UUID，最终统一转成 128-bit 字符串。
-  const NAME_TO_16BIT = new Map(Object.entries({
+  // Web Bluetooth 鍏佽鐨勬爣鍑?service name锛堝埆鍚嶏級鍦ㄤ笉鍚屾祻瑙堝櫒瀹炵幇涓彲鑳芥湁宸紓锛?  // 杩欓噷缁欎竴浜涘父瑙佸埆鍚嶆槧灏勫埌 16-bit UUID锛屾渶缁堢粺涓€杞垚 128-bit 瀛楃涓层€?  const NAME_TO_16BIT = new Map(Object.entries({
     generic_access: "1800",
     generic_attribute: "1801",
     immediate_alert: "1802",
@@ -247,18 +238,18 @@
         entry.nusNotifyEnabled.add(key);
         enabledCount += 1;
       } catch (e) {
-        log(`自动启用 Notify 失败：${uuid} - ${e?.message || e}`);
+        log(`鑷姩鍚敤 Notify 澶辫触锛?{uuid} - ${e?.message || e}`);
       }
     }
 
     if (!foundAny) {
-      log("未发现 NUS 目标 Notify Characteristic");
+      log("鏈彂鐜?NUS 鐩爣 Notify Characteristic");
       return;
     }
     if (enabledCount > 0) {
-      log(`已自动启用 NUS Notify：${enabledCount} 个`);
+      log(`宸茶嚜鍔ㄥ惎鐢?NUS Notify锛?{enabledCount} 涓猔);
     } else {
-      log("NUS Notify 已是启用状态");
+      log("NUS Notify 宸叉槸鍚敤鐘舵€?);
     }
   }
 
@@ -284,18 +275,18 @@
 
     if (state === "idle") {
       btn.disabled = false;
-      btn.textContent = "连接";
+      btn.textContent = "杩炴帴";
       badge.textContent = "";
       badge.className = "chip status";
     } else if (state === "connecting") {
       btn.disabled = true;
-      btn.textContent = "连接中…";
-      badge.textContent = "连接中";
+      btn.textContent = "杩炴帴涓€?;
+      badge.textContent = "杩炴帴涓?;
       badge.className = "chip status";
     } else if (state === "connected") {
       btn.disabled = false;
-      btn.textContent = "断开";
-      badge.textContent = "已连接";
+      btn.textContent = "鏂紑";
+      badge.textContent = "宸茶繛鎺?;
       badge.className = "chip status ok";
     }
   }
@@ -309,7 +300,7 @@
       <td class="mono rssi"></td>
       <td class="mono last"></td>
       <td>
-        <button class="btnSmall connect">连接</button>
+        <button class="btnSmall connect">杩炴帴</button>
         <span class="chip status"></span>
       </td>
     `;
@@ -319,8 +310,8 @@
     detailsTr.innerHTML = `
       <td colspan="4">
         <details open>
-          <summary>服务与特征（Service / Characteristic）</summary>
-          <div class="detailBody">(未连接)</div>
+          <summary>鏈嶅姟涓庣壒寰侊紙Service / Characteristic锛?/summary>
+          <div class="detailBody">(鏈繛鎺?</div>
         </details>
       </td>
     `;
@@ -364,12 +355,12 @@
     ensureRows(entry);
 
     entry.lastSeenMs = now;
-    entry.name = name || "(无名称)";
+    entry.name = name || "(鏃犲悕绉?";
     if (typeof rssi === "number") entry.rssi = rssi;
     if (advDevice) entry.advDevice = advDevice;
 
     entry.tr.querySelector(".name").textContent = entry.name;
-    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(未知)";
+    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(鏈煡)";
     entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
@@ -380,8 +371,7 @@
   function refreshView() {
     const now = Date.now();
 
-    // 1) 剔除 10 秒未出现过的设备（已连接的不剔除）
-    for (const [id, entry] of rows.entries()) {
+    // 1) 鍓旈櫎 10 绉掓湭鍑虹幇杩囩殑璁惧锛堝凡杩炴帴鐨勪笉鍓旈櫎锛?    for (const [id, entry] of rows.entries()) {
       if (entry.connected) continue;
       if (now - entry.lastSeenMs > MAX_AGE_MS) {
         entry.tr?.remove();
@@ -390,7 +380,7 @@
       }
     }
 
-    // 2) 按 RSSI 自动排序（RSSI 越大越靠前）
+    // 2) 鎸?RSSI 鑷姩鎺掑簭锛圧SSI 瓒婂ぇ瓒婇潬鍓嶏級
     const entries = Array.from(rows.values());
     entries.sort((a, b) => {
       const ar = (typeof a.rssi === "number") ? a.rssi : -Infinity;
@@ -399,8 +389,7 @@
       return b.lastSeenMs - a.lastSeenMs;
     });
 
-    // 3) 重新按顺序挂载
-    for (const e of entries) {
+    // 3) 閲嶆柊鎸夐『搴忔寕杞?    for (const e of entries) {
       tbody.appendChild(e.tr);
       tbody.appendChild(e.detailsTr);
     }
@@ -413,7 +402,7 @@
     }
     rows.clear();
     tbody.innerHTML = "";
-    log("已清空列表（并尝试断开所有连接）");
+    log("宸叉竻绌哄垪琛紙骞跺皾璇曟柇寮€鎵€鏈夎繛鎺ワ級");
   }
 
   function focusOnEntry(keepEntry) {
@@ -475,7 +464,7 @@
 
   async function startScan() {
     if (!("bluetooth" in navigator)) {
-      log("当前浏览器不支持 Web Bluetooth（navigator.bluetooth 不存在）");
+      log("褰撳墠娴忚鍣ㄤ笉鏀寔 Web Bluetooth锛坣avigator.bluetooth 涓嶅瓨鍦級");
       return;
     }
 
@@ -486,34 +475,33 @@
         btnStart.disabled = true;
         btnStop.disabled = false;
         ensureRefreshTimer();
-        log("开始扫描：requestLEScan 已启动（将持续接收周边广播事件）");
+        log("寮€濮嬫壂鎻忥細requestLEScan 宸插惎鍔紙灏嗘寔缁帴鏀跺懆杈瑰箍鎾簨浠讹級");
         return;
       } catch (e) {
-        log("requestLEScan 启动失败：" + (e?.message || e));
-        log("将尝试降级到 requestDevice（只能手动选设备，且通常拿不到 RSSI）");
+        log("requestLEScan 鍚姩澶辫触锛? + (e?.message || e));
+        log("灏嗗皾璇曢檷绾у埌 requestDevice锛堝彧鑳芥墜鍔ㄩ€夎澶囷紝涓旈€氬父鎷夸笉鍒?RSSI锛?);
       }
     } else {
-      log("当前浏览器没有 requestLEScan（Scanning API 不可用）。尝试降级到 requestDevice。");
+      log("褰撳墠娴忚鍣ㄦ病鏈?requestLEScan锛圫canning API 涓嶅彲鐢級銆傚皾璇曢檷绾у埌 requestDevice銆?);
     }
 
-    // 降级：requestDevice（不是“被动扫描所有广播”）
+    // 闄嶇骇锛歳equestDevice锛堜笉鏄€滆鍔ㄦ壂鎻忔墍鏈夊箍鎾€濓級
     try {
       const device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: getOptionalServices()
       });
       if (!hasName(device.name)) {
-        log("已选择设备但名称为空：按规则不加入列表");
+        log("宸查€夋嫨璁惧浣嗗悕绉颁负绌猴細鎸夎鍒欎笉鍔犲叆鍒楄〃");
       } else {
-        // 该降级路径通常拿不到 RSSI；为严格遵循“RSSI阈值过滤”，这里不加入列表
-        log("提示：该浏览器不支持扫描 RSSI（requestDevice 降级路径），无法按 RSSI 阈值过滤；因此不加入列表");
-        // 若你希望降级路径也显示设备（RSSI 显示为未知），取消下一行注释：
+        // 璇ラ檷绾ц矾寰勯€氬父鎷夸笉鍒?RSSI锛涗负涓ユ牸閬靛惊鈥淩SSI闃堝€艰繃婊も€濓紝杩欓噷涓嶅姞鍏ュ垪琛?        log("鎻愮ず锛氳娴忚鍣ㄤ笉鏀寔鎵弿 RSSI锛坮equestDevice 闄嶇骇璺緞锛夛紝鏃犳硶鎸?RSSI 闃堝€艰繃婊わ紱鍥犳涓嶅姞鍏ュ垪琛?);
+        // 鑻ヤ綘甯屾湜闄嶇骇璺緞涔熸樉绀鸿澶囷紙RSSI 鏄剧ず涓烘湭鐭ワ級锛屽彇娑堜笅涓€琛屾敞閲婏細
         // upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
       }
       ensureRefreshTimer();
-      log(`已选择设备：${device.name || "(无名称)"}`);
+      log(`宸查€夋嫨璁惧锛?{device.name || "(鏃犲悕绉?"}`);
     } catch (e) {
-      log("requestDevice 失败：" + (e?.message || e));
+      log("requestDevice 澶辫触锛? + (e?.message || e));
     }
   }
 
@@ -526,20 +514,20 @@
     btnStop.disabled = true;
 
     ensureRefreshTimer();
-    log("已停止扫描（列表将仅保留最近10秒出现的设备；已连接设备不会自动消失）");
+    log("宸插仠姝㈡壂鎻忥紙鍒楄〃灏嗕粎淇濈暀鏈€杩?0绉掑嚭鐜扮殑璁惧锛涘凡杩炴帴璁惧涓嶄細鑷姩娑堝け锛?);
   }
 
   function onAdv(event) {
     const dev = event.device;
 
-    // 过滤掉“无名称”的设备
+    // 杩囨护鎺夆€滄棤鍚嶇О鈥濈殑璁惧
     const name = dev?.name;
     if (!hasName(name)) return;
 
-    // RSSI 过滤：只显示大于阈值的设备
+    // RSSI 杩囨护锛氬彧鏄剧ず澶т簬闃堝€肩殑璁惧
     const th = getRssiThreshold();
     const rssi = event.rssi;
-    // 你的需求依赖 RSSI：rssi 缺失则不展示
+    // 浣犵殑闇€姹備緷璧?RSSI锛歳ssi 缂哄け鍒欎笉灞曠ず
     if (typeof rssi !== "number") return;
     if (rssi <= th) return;
 
@@ -553,7 +541,7 @@
 
   async function connectEntry(entry) {
     if (!("bluetooth" in navigator)) {
-      log("当前浏览器不支持 Web Bluetooth。");
+      log("褰撳墠娴忚鍣ㄤ笉鏀寔 Web Bluetooth銆?);
       return;
     }
     if (entry.connecting) return;
@@ -564,12 +552,11 @@
     try {
       const optionalServices = getOptionalServices();
       if (optionalServices.length === 0) {
-        log("提示：optionalServices 为空，连接后无法枚举服务。请在上方输入要访问的服务 UUID/别名。");
+        log("鎻愮ず锛歰ptionalServices 涓虹┖锛岃繛鎺ュ悗鏃犳硶鏋氫妇鏈嶅姟銆傝鍦ㄤ笂鏂硅緭鍏ヨ璁块棶鐨勬湇鍔?UUID/鍒悕銆?);
       }
 
-      // 点击“连接”时使用 requestDevice() 走一次“用户选择授权”
-      let device = null;
-      if (entry.name && entry.name !== "(无名称)") {
+      // 鐐瑰嚮鈥滆繛鎺モ€濇椂浣跨敤 requestDevice() 璧颁竴娆♀€滅敤鎴烽€夋嫨鎺堟潈鈥?      let device = null;
+      if (entry.name && entry.name !== "(鏃犲悕绉?") {
         device = await navigator.bluetooth.requestDevice({
           filters: [{ name: entry.name }],
           optionalServices
@@ -588,8 +575,8 @@
         entry.connecting = false;
         entry.gattServer = null;
         setButtonState(entry, "idle");
-        showDetails(entry, "(已断开)", true);
-        log(`设备断开：${device.name || "(无名称)"}`);
+        showDetails(entry, "(宸叉柇寮€)", true);
+        log(`璁惧鏂紑锛?{device.name || "(鏃犲悕绉?"}`);
       });
 
       const server = await device.gatt.connect();
@@ -597,10 +584,9 @@
       entry.connected = true;
       entry.connecting = false;
       setButtonState(entry, "connected");
-      log(`已连接：${device.name || "(无名称)"}`);
+      log(`宸茶繛鎺ワ細${device.name || "(鏃犲悕绉?"}`);
 
-      // 连接成功后停止扫描，仅保留当前设备
-      stopScan();
+      // 杩炴帴鎴愬姛鍚庡仠姝㈡壂鎻忥紝浠呬繚鐣欏綋鍓嶈澶?      stopScan();
       focusOnEntry(entry);
       activeEntry = entry;
 
@@ -611,8 +597,8 @@
       entry.connected = false;
       entry.gattServer = null;
       setButtonState(entry, "idle");
-      showDetails(entry, `<span class="err">连接/枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
-      log("连接/枚举失败：" + (e?.message || e));
+      showDetails(entry, `<span class="err">杩炴帴/鏋氫妇澶辫触锛?{escapeHtml(e?.message || e)}</span>`, true);
+      log("杩炴帴/鏋氫妇澶辫触锛? + (e?.message || e));
     }
   }
 
@@ -628,8 +614,8 @@
     entry.nusNotifyChars = new Map();
     entry.nusNotifyEnabled = new Set();
     setButtonState(entry, "idle");
-    showDetails(entry, "(已断开)", true);
-    log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
+    showDetails(entry, "(宸叉柇寮€)", true);
+    log(`宸叉柇寮€锛?{entry.grantedDevice?.name || entry.name || "(鏃犲悕绉?"}`);
     if (activeEntry === entry) activeEntry = null;
   }
 
@@ -644,14 +630,14 @@
 
   async function enumerateGATT(entry, server, optionalServices) {
     try {
-      // getPrimaryServices() 只会返回“本 origin 被允许访问”的 services
+      // getPrimaryServices() 鍙細杩斿洖鈥滄湰 origin 琚厑璁歌闂€濈殑 services
       const services = await server.getPrimaryServices();
       const allowNote = optionalServices?.length
-        ? `<div class="subhint">当前允许访问的服务数量：<span class="mono">${optionalServices.length}</span>（只会显示这些范围内能访问到的服务）</div>`
-        : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
+        ? `<div class="subhint">褰撳墠鍏佽璁块棶鐨勬湇鍔℃暟閲忥細<span class="mono">${optionalServices.length}</span>锛堝彧浼氭樉绀鸿繖浜涜寖鍥村唴鑳借闂埌鐨勬湇鍔★級</div>`
+        : `<div class="subhint err">optionalServices 涓虹┖锛氭祻瑙堝櫒浼氭嫆缁濊闂换浣曟湇鍔°€傝鍦ㄤ笂鏂硅緭鍏ユ湇鍔?UUID/鍒悕鍚庡啀杩炴帴銆?/div>`;
 
       if (!services || services.length === 0) {
-        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, true);
+        showDetails(entry, `${allowNote}<div>(鏈彂鐜板彲璁块棶鐨?Primary Services)</div>`, true);
         return;
       }
 
@@ -669,9 +655,9 @@
         const svcUuid = svc.uuid;
         let svcBlock = `<div class="svc"><div class="svcTitle">Service: <span class="mono">${escapeHtml(svcUuid)}</span></div>`;
         if (!chars) {
-          svcBlock += `<div class="err">无法读取 Characteristics（可能未将该服务加入 optionalServices 或设备限制）</div>`;
+          svcBlock += `<div class="err">鏃犳硶璇诲彇 Characteristics锛堝彲鑳芥湭灏嗚鏈嶅姟鍔犲叆 optionalServices 鎴栬澶囬檺鍒讹級</div>`;
         } else if (chars.length === 0) {
-          svcBlock += `<div>(无 Characteristics)</div>`;
+          svcBlock += `<div>(鏃?Characteristics)</div>`;
         } else {
           svcBlock += `<ul>`;
           for (const ch of chars) {
@@ -702,8 +688,8 @@
 
       showDetails(entry, parts.join(""), true);
     } catch (e) {
-      showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
-      log("枚举服务失败：" + (e?.message || e));
+      showDetails(entry, `<span class="err">鏋氫妇澶辫触锛?{escapeHtml(e?.message || e)}</span>`, true);
+      log("鏋氫妇鏈嶅姟澶辫触锛? + (e?.message || e));
     }
   }
 
@@ -769,7 +755,7 @@
       <td colspan="4" class="detailsCard">
         <details open>
           <summary>Service / Characteristic</summary>
-          <div class="detailBody">(未连接)</div>
+          <div class="detailBody">(鏈繛鎺?</div>
         </details>
       </td>
     `;
@@ -809,15 +795,16 @@
           document.execCommand("copy");
           ta.remove();
         }
-        setCopyStatus("已复制", true);
+        setCopyStatus("宸插鍒?, true);
       } catch (e) {
-        setCopyStatus("复制失败，请手动复制", false);
+        setCopyStatus("澶嶅埗澶辫触锛岃鎵嬪姩澶嶅埗", false);
       }
     });
   }
 
-  log("页面已加载。请点击“开始扫描”。");
+  log("椤甸潰宸插姞杞姐€傝鐐瑰嚮鈥滃紑濮嬫壂鎻忊€濄€?);
 })();
 </script>
 </body>
 </html>
+
