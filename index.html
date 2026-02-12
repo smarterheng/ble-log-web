@@ -15,17 +15,8 @@
     }
     * { box-sizing: border-box; }
     body { font-family: "Segoe UI", "Noto Sans SC", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
-    .topBar { background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; }
     body > h2 { display: none; }
     .pageTitle { display: block; margin: 0; padding: 16px; background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; font-size: 38px; font-weight: 700; letter-spacing: .2px; }
-    .topMain { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
-    .topMain h2 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; letter-spacing: .2px; }
-    .topIcon { width: 32px; text-align: center; font-size: 22px; line-height: 1; }
-    .stopAction { border: 0; background: transparent; color: #fff; font-weight: 700; letter-spacing: .4px; padding: 8px 0; }
-    .stopAction[disabled] { opacity: .5; }
-    .tabs { display: flex; gap: 24px; padding: 0 16px 8px; font-size: 14px; text-transform: uppercase; }
-    .tabs span { opacity: .7; border-bottom: 3px solid transparent; padding: 12px 0 10px; }
-    .tabs span.active { opacity: 1; border-color: #fff; }
     .panel { background: var(--panel); border-top: 1px solid rgba(0,0,0,.1); padding: 12px; }
     .hint { color: var(--muted); margin: 0 0 10px; line-height: 1.4; font-size: 13px; }
     .controlGrid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 10px; }
@@ -66,13 +57,6 @@
 </head>
 <body>
   <h2 class="pageTitle">Devices</h2>
-  <div class="topBar">
-    <div class="tabs">
-      <span class="active">Scanner</span>
-      <span>Bonded</span>
-      <span>Advertiser</span>
-    </div>
-  </div>
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
