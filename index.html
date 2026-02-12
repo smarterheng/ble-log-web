@@ -197,6 +197,36 @@
     logEl.textContent = `${content}\n` + logEl.textContent;
   }
 
+  function dataViewToHex(dataView) {
+    if (!dataView) return "";
+    const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+  }
+
+  function parseManufacturerData(dataMap) {
+    const list = [];
+    if (!dataMap || typeof dataMap.forEach !== "function") return list;
+    dataMap.forEach((dataView, companyId) => {
+      const companyIdHex = `0x${Number(companyId).toString(16).padStart(4, "0")}`;
+      list.push({
+        companyId: companyIdHex,
+        dataHex: dataViewToHex(dataView)
+      });
+    });
+    return list;
+  }
+
+  function buildManufacturerDataHtml(entry) {
+    const list = Array.isArray(entry?.manufacturerData) ? entry.manufacturerData : [];
+    if (list.length === 0) {
+      return `<div class="svc"><div class="svcTitle">Manufacturer Data</div><div class="subhint">(none)</div></div>`;
+    }
+    const items = list.map((item) =>
+      `<li><span class="mono">${escapeHtml(item.companyId)}</span>: <span class="mono">${escapeHtml(item.dataHex || "(empty)")}</span></li>`
+    ).join("");
+    return `<div class="svc"><div class="svcTitle">Manufacturer Data</div><ul>${items}</ul></div>`;
+  }
+
   function bindNotifyListener(ch) {
     ch.addEventListener("characteristicvaluechanged", (event) => {
       const dv = event.target.value;
@@ -327,7 +357,7 @@
     tbody.appendChild(detailsTr);
   }
 
-  function upsertRow({ name, id, rssi, advDevice }) {
+  function upsertRow({ name, id, rssi, advDevice, manufacturerData }) {
     const now = Date.now();
     let entry = rows.get(id);
 
@@ -342,6 +372,7 @@
         gattServer: null,
         connected: false,
         connecting: false,
+        manufacturerData: [],
         nusNotifyChars: new Map(),
         nusNotifyEnabled: new Set()
       };
@@ -354,6 +385,7 @@
     entry.name = name || "(无名称)";
     if (typeof rssi === "number") entry.rssi = rssi;
     if (advDevice) entry.advDevice = advDevice;
+    if (Array.isArray(manufacturerData)) entry.manufacturerData = manufacturerData;
 
     entry.tr.querySelector(".name").textContent = entry.name;
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(未知)";
@@ -362,6 +394,9 @@
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
 
     refreshView();
+    if (!entry.connected) {
+      showDetails(entry, buildManufacturerDataHtml(entry), false);
+    }
   }
 
   function refreshView() {
@@ -534,7 +569,8 @@
       name,
       id: dev?.id || "(unknown-id)",
       rssi,
-      advDevice: dev
+      advDevice: dev,
+      manufacturerData: parseManufacturerData(event.manufacturerData)
     });
   }
 
@@ -638,11 +674,12 @@
         : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
 
       if (!services || services.length === 0) {
-        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
+        showDetails(entry, `${buildManufacturerDataHtml(entry)}${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
         return;
       }
 
-      const parts = [allowNote];
+      const manufacturerBlock = buildManufacturerDataHtml(entry);
+      const parts = [manufacturerBlock, allowNote];
       entry.nusNotifyChars = new Map();
       entry.nusNotifyEnabled = new Set();
       for (const svc of services) {
