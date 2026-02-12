@@ -37,6 +37,7 @@
     .name { font-size: 24px; font-weight: 600; line-height: 1.1; }
     .meta { color: #6a747e; font-size: 15px; margin-top: 2px; }
     .metrics { display: flex; gap: 14px; margin-top: 8px; font-size: 18px; align-items: center; }
+    .mfgLine { margin-top: 4px; font-size: 12px; color: #54606a; }
     .connect { min-width: 132px; }
     .detailsCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 8px 12px 12px; }
     #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin: 12px; max-height: 640px; overflow-y: auto; }
@@ -216,17 +217,6 @@
     return list;
   }
 
-  function buildManufacturerDataHtml(entry) {
-    const list = Array.isArray(entry?.manufacturerData) ? entry.manufacturerData : [];
-    if (list.length === 0) {
-      return `<div class="svc"><div class="svcTitle">Manufacturer Data</div><div class="subhint">(none)</div></div>`;
-    }
-    const items = list.map((item) =>
-      `<li><span class="mono">${escapeHtml(item.companyId)}</span>: <span class="mono">${escapeHtml(item.dataHex || "(empty)")}</span></li>`
-    ).join("");
-    return `<div class="svc"><div class="svcTitle">Manufacturer Data</div><ul>${items}</ul></div>`;
-  }
-
   function bindNotifyListener(ch) {
     ch.addEventListener("characteristicvaluechanged", (event) => {
       const dv = event.target.value;
@@ -392,11 +382,19 @@
     entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
+    const mfgEl = entry.tr.querySelector(".mfgLine");
+    const mfgHex = (entry.manufacturerData || []).map((item) => item.dataHex).filter(Boolean).join(" | ");
+    if (mfgEl) {
+      if (mfgHex) {
+        mfgEl.textContent = mfgHex;
+        mfgEl.style.display = "";
+      } else {
+        mfgEl.textContent = "";
+        mfgEl.style.display = "none";
+      }
+    }
 
     refreshView();
-    if (!entry.connected) {
-      showDetails(entry, buildManufacturerDataHtml(entry), false);
-    }
   }
 
   function refreshView() {
@@ -674,12 +672,11 @@
         : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
 
       if (!services || services.length === 0) {
-        showDetails(entry, `${buildManufacturerDataHtml(entry)}${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
+        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
         return;
       }
 
-      const manufacturerBlock = buildManufacturerDataHtml(entry);
-      const parts = [manufacturerBlock, allowNote];
+      const parts = [allowNote];
       entry.nusNotifyChars = new Map();
       entry.nusNotifyEnabled = new Set();
       for (const svc of services) {
@@ -781,6 +778,7 @@
                 <span class="mono rssi"></span>
                 <span class="chip status"></span>
               </div>
+              <div class="mfgLine mono"></div>
             </div>
             <button class="connect">CONNECT</button>
           </div>
