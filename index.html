@@ -5,29 +5,74 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>G30 remote log terminal</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
-    button { padding: 10px 14px; margin-right: 8px; }
-    input[type="text"] { padding: 10px 12px; width: 100%; box-sizing: border-box; }
-    .hint { color: #666; margin: 10px 0 14px; line-height: 1.5; }
-    .row { margin: 10px 0; }
-    .label { font-weight: 600; margin-bottom: 6px; }
-    .subhint { color: #666; font-size: 13px; line-height: 1.5; margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { border: 1px solid #ddd; padding: 8px; font-size: 14px; vertical-align: top; }
-    th { background: #f6f6f6; text-align: left; }
+    :root {
+      --teal: #0ea3bf;
+      --teal-dark: #0b8ea8;
+      --bg: #ebedf0;
+      --panel: #f8fafb;
+      --text: #111;
+      --muted: #5e6a73;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: "Segoe UI", "Noto Sans SC", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+    .topBar { background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; }
+    body > h2 { display: none; }
+    .pageTitle { display: block; margin: 0; padding: 16px; background: linear-gradient(180deg, var(--teal-dark), var(--teal)); color: #fff; font-size: 38px; font-weight: 700; letter-spacing: .2px; }
+    .topMain { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+    .topMain h2 { margin: 0; font-size: 20px; font-weight: 600; flex: 1; letter-spacing: .2px; }
+    .topIcon { width: 32px; text-align: center; font-size: 22px; line-height: 1; }
+    .stopAction { border: 0; background: transparent; color: #fff; font-weight: 700; letter-spacing: .4px; padding: 8px 0; }
+    .stopAction[disabled] { opacity: .5; }
+    .tabs { display: flex; gap: 24px; padding: 0 16px 8px; font-size: 14px; text-transform: uppercase; }
+    .tabs span { opacity: .7; border-bottom: 3px solid transparent; padding: 12px 0 10px; }
+    .tabs span.active { opacity: 1; border-color: #fff; }
+    .panel { background: var(--panel); border-top: 1px solid rgba(0,0,0,.1); padding: 12px; }
+    .hint { color: var(--muted); margin: 0 0 10px; line-height: 1.4; font-size: 13px; }
+    .controlGrid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 10px; }
+    .row { margin: 0; }
+    .label { font-weight: 600; margin-bottom: 4px; font-size: 13px; color: #23313c; }
+    input[type="text"], select { padding: 10px 12px; width: 100%; border: 1px solid #ccd6dd; border-radius: 8px; background: #fff; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+    button { padding: 10px 14px; border: 0; border-radius: 8px; background: #111; color: #fff; font-weight: 700; letter-spacing: .2px; }
+    button[disabled] { opacity: .55; }
+    .subhint { color: var(--muted); font-size: 12px; line-height: 1.3; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin-top: 12px; max-height: 640px; overflow-y: auto; }
-    .btnSmall { padding: 6px 10px; margin: 0; }
+    .deviceList { margin-top: 12px; border-top: 1px solid #d4dce2; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    thead { display: none; }
+    td { padding: 0; border: 0; }
+    .deviceCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 12px; }
+    .deviceHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .name { font-size: 24px; font-weight: 600; line-height: 1.1; }
+    .meta { color: #6a747e; font-size: 15px; margin-top: 2px; }
+    .metrics { display: flex; gap: 14px; margin-top: 8px; font-size: 18px; align-items: center; }
+    .connect { min-width: 132px; }
+    .detailsCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 8px 12px 12px; }
+    #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin: 12px; max-height: 640px; overflow-y: auto; }
+    .btnSmall { padding: 8px 10px; margin: 0; font-size: 12px; border-radius: 8px; }
     .btnSmall[disabled] { opacity: 0.6; }
-    details { margin: 8px 0; }
+    details { margin: 0; }
     .svc { margin: 8px 0 10px; }
     .svcTitle { font-weight: 600; }
-    .chip { display: inline-block; padding: 2px 6px; border: 1px solid #ddd; border-radius: 999px; margin-left: 6px; font-size: 12px; color: #444; }
+    .chip { display: inline-block; padding: 2px 6px; border: 1px solid #d0d8de; border-radius: 999px; margin-left: 6px; font-size: 12px; color: #44515b; }
     .err { color: #b00020; }
     .ok  { color: #0a7a2f; }
+    @media (max-width: 760px) {
+      .name { font-size: 18px; }
+      .connect { min-width: 108px; padding: 8px 10px; }
+      .metrics { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
+  <h2 class="pageTitle">Devices</h2>
+  <div class="topBar">
+    <div class="tabs">
+      <span class="active">Scanner</span>
+      <span>Bonded</span>
+      <span>Advertiser</span>
+    </div>
+  </div>
   <h2>BLE 扫描（Web Bluetooth）</h2>
 
   <div class="hint">
@@ -49,7 +94,7 @@
     <input id="rssiInput" type="text" value="-80" />
   </div>
 
-  <div>
+  <div class="actions">
     <button id="btnStart">开始扫描</button>
     <button id="btnStop" disabled>停止扫描</button>
     <button id="btnClear">清空列表</button>
@@ -326,6 +371,8 @@
     entry.tr.querySelector(".name").textContent = entry.name;
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(未知)";
     entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
+    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
+    entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
 
     refreshView();
   }
@@ -670,6 +717,78 @@
     }[c]));
   }
 
+  // Override: scanner-like card UI
+  function setButtonState(entry, state) {
+    const btn = entry.tr?.querySelector("button.connect");
+    const badge = entry.tr?.querySelector(".status");
+    if (!btn || !badge) return;
+    if (state === "idle") {
+      btn.disabled = false;
+      btn.textContent = "CONNECT";
+      badge.textContent = "";
+      badge.className = "chip status";
+      return;
+    }
+    if (state === "connecting") {
+      btn.disabled = true;
+      btn.textContent = "CONNECTING";
+      badge.textContent = "CONNECTING";
+      badge.className = "chip status";
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = "DISCONNECT";
+    badge.textContent = "CONNECTED";
+    badge.className = "chip status ok";
+  }
+
+  // Override: render each device as a card-like row
+  function ensureRows(entry) {
+    if (entry.tr) return;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td colspan="4">
+        <div class="deviceCard">
+          <div class="deviceHead">
+            <div>
+              <div class="name"></div>
+              <div class="meta mono last"></div>
+              <div class="metrics">
+                <span class="mono rssi"></span>
+                <span class="chip status"></span>
+              </div>
+            </div>
+            <button class="connect">CONNECT</button>
+          </div>
+        </div>
+      </td>
+    `;
+    const detailsTr = document.createElement("tr");
+    detailsTr.style.display = "none";
+    detailsTr.innerHTML = `
+      <td colspan="4" class="detailsCard">
+        <details open>
+          <summary>Service / Characteristic</summary>
+          <div class="detailBody">(未连接)</div>
+        </details>
+      </td>
+    `;
+    entry.tr = tr;
+    entry.detailsTr = detailsTr;
+    tr.querySelector("button.connect").addEventListener("click", async () => {
+      if (entry.connected) {
+        await disconnectEntry(entry);
+      } else {
+        await connectEntry(entry);
+      }
+    });
+    tbody.appendChild(tr);
+    tbody.appendChild(detailsTr);
+  }
+
+  if (btnStart) btnStart.textContent = "START SCANNING";
+  if (btnStop) btnStop.textContent = "STOP SCANNING";
+  if (btnClear) btnClear.textContent = "CLEAR";
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
