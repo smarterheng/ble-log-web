@@ -305,7 +305,7 @@
     detailsTr.style.display = "none";
     detailsTr.innerHTML = `
       <td colspan="4">
-        <details open>
+        <details>
           <summary>服务与特征（Service / Characteristic）</summary>
           <div class="detailBody">(未连接)</div>
         </details>
@@ -638,7 +638,7 @@
         : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
 
       if (!services || services.length === 0) {
-        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, true);
+        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
         return;
       }
 
@@ -687,9 +687,9 @@
         parts.push(svcBlock);
       }
 
-      showDetails(entry, parts.join(""), true);
+      showDetails(entry, parts.join(""), false);
     } catch (e) {
-      showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
+      showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, false);
       log("枚举服务失败：" + (e?.message || e));
     }
   }
@@ -754,7 +754,7 @@
     detailsTr.style.display = "none";
     detailsTr.innerHTML = `
       <td colspan="4" class="detailsCard">
-        <details open>
+        <details>
           <summary>Service / Characteristic</summary>
           <div class="detailBody">(未连接)</div>
         </details>
