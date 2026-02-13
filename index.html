@@ -288,7 +288,7 @@
   function updateDataFormatUI() {
     const isHex = notifyFormat?.value === "hex";
     if (sendPrefix) sendPrefix.style.display = isHex ? "" : "none";
-    if (sendInput) sendInput.placeholder = isHex ? "14562A" : "请输入文本";
+    if (sendInput) sendInput.placeholder = isHex ? "请输入Hex字节流" : "请输入文本";
   }
 
   function parseHexInputToBytes(hexText) {
