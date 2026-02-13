@@ -139,7 +139,7 @@
     </label>
   </div>
 
-  <div id="serverCard" class="serverCard">
+  <div id="serverCard" class="serverCard" style="display:none;">
     <div class="label">连接服务器</div>
     <div class="serverRow">
       <span id="serverLed" class="serverLed" aria-hidden="true"></span>
@@ -176,6 +176,7 @@
   const sendInput = $("sendInput");
   const btnSend = $("btnSend");
   const btnClearLog = $("btnClearLog");
+  const serverCard = $("serverCard");
   const serverLed = $("serverLed");
   const btnConnectServer = $("btnConnectServer");
   const btnDisconnectServer = $("btnDisconnectServer");
@@ -322,7 +323,7 @@
     disconnectLogServer();
     setServerUiState("connecting");
 
-    const url = `ws://159.75.131.235:9002/ws/log?token=${encodeURIComponent("CHANGE_ME_TOKEN")}&device_id=${encodeURIComponent(manufacturerText)}`;
+    const url = `ws://159.75.131.235:9002/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
     const ws = new WebSocket(url);
     logWs = ws;
 
@@ -377,6 +378,12 @@
   function updateSendCardVisibility(entry) {
     const canSend = !!entry?.connected && !!entry?.nusWriteChar;
     if (sendCard) sendCard.style.display = canSend ? "" : "none";
+  }
+
+  function updateServerCardVisibility(entry) {
+    const shouldShow = !!entry?.connected;
+    if (serverCard) serverCard.style.display = shouldShow ? "" : "none";
+    if (!shouldShow) disconnectLogServer();
   }
 
   function updateDataFormatUI() {
@@ -625,6 +632,7 @@
     tbody.innerHTML = "";
     activeEntry = null;
     disconnectLogServer();
+    updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
     updateSendCardVisibility(null);
     log("已清空列表（并尝试断开所有连接）");
@@ -820,6 +828,7 @@
       activeEntry = entry;
 
       await enumerateGATT(entry, server, optionalServices);
+      updateServerCardVisibility(entry);
       updateNotifyOptionsVisibility(entry);
       updateSendCardVisibility(entry);
       await applySelectedNusNotify(entry);
@@ -851,6 +860,7 @@
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
     if (activeEntry === entry) activeEntry = null;
     disconnectLogServer();
+    updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
     updateSendCardVisibility(null);
   }
@@ -1090,6 +1100,7 @@
     });
   }
 
+  updateServerCardVisibility(null);
   setServerUiState("idle");
   log("页面已加载。请点击“开始扫描”。");
 })();
