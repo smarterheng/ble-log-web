@@ -43,6 +43,10 @@
     .notifyOptions { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
     .notifyOptions .label { margin-bottom: 8px; }
     .notifyOptions .opt { display: block; margin: 6px 0; font-size: 14px; color: #23313c; }
+    .sendCard { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
+    .sendRow { display: flex; align-items: center; gap: 8px; }
+    .sendPrefix { font-weight: 700; color: #23313c; min-width: 24px; text-align: right; }
+    .sendInput { flex: 1; }
     #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin: 12px; max-height: 640px; overflow-y: auto; }
     .btnSmall { padding: 8px 10px; margin: 0; font-size: 12px; border-radius: 8px; }
     .btnSmall[disabled] { opacity: 0.6; }
@@ -108,6 +112,15 @@
     <tbody id="tbody"></tbody>
   </table>
 
+  <div id="sendCard" class="sendCard" style="display:none;">
+    <div class="label">消息发送</div>
+    <div class="sendRow">
+      <span id="sendPrefix" class="sendPrefix">0x</span>
+      <input id="sendInput" class="sendInput" type="text" placeholder="14562A" />
+      <button id="btnSend" type="button">发送</button>
+    </div>
+  </div>
+
   <div id="notifyOptions" class="notifyOptions" style="display:none;">
     <div class="label">通知选项</div>
     <label id="optMsgWrap" class="opt" style="display:none;">
@@ -140,6 +153,10 @@
   const optLogWrap = $("optLogWrap");
   const optNotifyMsg = $("optNotifyMsg");
   const optNotifyLog = $("optNotifyLog");
+  const sendCard = $("sendCard");
+  const sendPrefix = $("sendPrefix");
+  const sendInput = $("sendInput");
+  const btnSend = $("btnSend");
 
   // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
@@ -155,6 +172,7 @@
   // 用 device.id 做“唯一键”（不显示在表格里）
   const rows = new Map();
   const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_MSG_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_LOG_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
   let activeEntry = null;
@@ -260,6 +278,62 @@
     if (optMsgWrap) optMsgWrap.style.display = hasMsg ? "" : "none";
     if (optLogWrap) optLogWrap.style.display = hasLog ? "" : "none";
     if (notifyOptions) notifyOptions.style.display = (hasMsg || hasLog) ? "" : "none";
+  }
+
+  function updateSendCardVisibility(entry) {
+    const canSend = !!entry?.connected && !!entry?.nusWriteChar;
+    if (sendCard) sendCard.style.display = canSend ? "" : "none";
+  }
+
+  function updateDataFormatUI() {
+    const isHex = notifyFormat?.value === "hex";
+    if (sendPrefix) sendPrefix.style.display = isHex ? "" : "none";
+    if (sendInput) sendInput.placeholder = isHex ? "14562A" : "请输入文本";
+  }
+
+  function parseHexInputToBytes(hexText) {
+    const raw = String(hexText || "").replace(/\s+/g, "");
+    if (raw.length === 0) return new Uint8Array();
+    if (!/^[0-9a-fA-F]+$/.test(raw)) {
+      throw new Error("Hex 输入包含非十六进制字符");
+    }
+    if (raw.length % 2 !== 0) {
+      throw new Error("Hex 输入长度必须为偶数");
+    }
+    const out = new Uint8Array(raw.length / 2);
+    for (let i = 0; i < raw.length; i += 2) {
+      out[i / 2] = parseInt(raw.slice(i, i + 2), 16);
+    }
+    return out;
+  }
+
+  async function sendMessage() {
+    const entry = activeEntry;
+    if (!entry?.connected || !entry?.nusWriteChar) {
+      log("发送失败：当前设备未连接或不支持消息发送");
+      return;
+    }
+    const isHex = notifyFormat?.value === "hex";
+    const input = sendInput?.value ?? "";
+    let bytes = null;
+    try {
+      bytes = isHex ? parseHexInputToBytes(input) : new TextEncoder().encode(input);
+    } catch (e) {
+      log(`发送失败：${e?.message || e}`);
+      return;
+    }
+
+    try {
+      const ch = entry.nusWriteChar;
+      if (typeof ch.writeValueWithoutResponse === "function") {
+        await ch.writeValueWithoutResponse(bytes);
+      } else {
+        await ch.writeValue(bytes);
+      }
+      log(`已发送 ${bytes.byteLength} 字节`);
+    } catch (e) {
+      log(`发送失败：${e?.message || e}`);
+    }
   }
 
   async function setNotifyState(entry, uuid, shouldEnable) {
@@ -383,6 +457,7 @@
         connected: false,
         connecting: false,
         manufacturerData: [],
+        nusWriteChar: null,
         nusNotifyChars: new Map(),
         nusNotifyEnabled: new Set(),
         nusNotifyBound: new Set()
@@ -456,6 +531,7 @@
     tbody.innerHTML = "";
     activeEntry = null;
     updateNotifyOptionsVisibility(null);
+    updateSendCardVisibility(null);
     log("已清空列表（并尝试断开所有连接）");
   }
 
@@ -650,6 +726,7 @@
 
       await enumerateGATT(entry, server, optionalServices);
       updateNotifyOptionsVisibility(entry);
+      updateSendCardVisibility(entry);
       await applySelectedNusNotify(entry);
     } catch (e) {
       entry.connecting = false;
@@ -670,6 +747,7 @@
     entry.connected = false;
     entry.connecting = false;
     entry.gattServer = null;
+    entry.nusWriteChar = null;
     entry.nusNotifyChars = new Map();
     entry.nusNotifyEnabled = new Set();
     entry.nusNotifyBound = new Set();
@@ -678,6 +756,7 @@
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
     if (activeEntry === entry) activeEntry = null;
     updateNotifyOptionsVisibility(null);
+    updateSendCardVisibility(null);
   }
 
   function showDetails(entry, html, open) {
@@ -698,15 +777,18 @@
         : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
 
       if (!services || services.length === 0) {
+        entry.nusWriteChar = null;
         entry.nusNotifyChars = new Map();
         entry.nusNotifyEnabled = new Set();
         entry.nusNotifyBound = new Set();
         updateNotifyOptionsVisibility(entry);
+        updateSendCardVisibility(entry);
         showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
         return;
       }
 
       const parts = [allowNote];
+      entry.nusWriteChar = null;
       entry.nusNotifyChars = new Map();
       entry.nusNotifyEnabled = new Set();
       entry.nusNotifyBound = new Set();
@@ -736,7 +818,11 @@
             if (p.indicate) props.push("indicate");
             if (p.authenticatedSignedWrites) props.push("signedWrites");
 
-            const isNusNotify = (svcUuid.toLowerCase() === NUS_SERVICE_UUID) && !!p.notify;
+            const isNusService = (svcUuid.toLowerCase() === NUS_SERVICE_UUID);
+            const isNusNotify = isNusService && !!p.notify;
+            if (isNusService && ch.uuid.toLowerCase() === NUS_WRITE_UUID) {
+              entry.nusWriteChar = ch;
+            }
             if (isNusNotify) {
               entry.nusNotifyChars.set(ch.uuid.toLowerCase(), ch);
             }
@@ -753,6 +839,8 @@
       }
 
       showDetails(entry, parts.join(""), false);
+      updateNotifyOptionsVisibility(entry);
+      updateSendCardVisibility(entry);
     } catch (e) {
       showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, false);
       log("枚举服务失败：" + (e?.message || e));
@@ -842,6 +930,12 @@
   if (btnStart) btnStart.textContent = "START SCAN";
   if (btnStop) btnStop.textContent = "STOP";
   if (btnClear) btnClear.textContent = "CLEAR";
+  updateDataFormatUI();
+  if (notifyFormat) {
+    notifyFormat.addEventListener("change", () => {
+      updateDataFormatUI();
+    });
+  }
   if (optNotifyMsg) {
     optNotifyMsg.addEventListener("change", async () => {
       await applySelectedNusNotify(activeEntry);
@@ -855,6 +949,11 @@
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
+  if (btnSend) {
+    btnSend.addEventListener("click", async () => {
+      await sendMessage();
+    });
+  }
   if (btnCopyFlags) {
     btnCopyFlags.addEventListener("click", async () => {
       const text = "chrome://flags/#enable-experimental-web-platform-features";
