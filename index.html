@@ -40,6 +40,9 @@
     .mfgLine { margin-top: 4px; font-size: 12px; font-weight: 700; color: #54606a; }
     .connect { min-width: 132px; }
     .detailsCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 8px 12px 12px; }
+    .notifyOptions { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
+    .notifyOptions .label { margin-bottom: 8px; }
+    .notifyOptions .opt { display: block; margin: 6px 0; font-size: 14px; color: #23313c; }
     #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin: 12px; max-height: 640px; overflow-y: auto; }
     .btnSmall { padding: 8px 10px; margin: 0; font-size: 12px; border-radius: 8px; }
     .btnSmall[disabled] { opacity: 0.6; }
@@ -105,6 +108,18 @@
     <tbody id="tbody"></tbody>
   </table>
 
+  <div id="notifyOptions" class="notifyOptions" style="display:none;">
+    <div class="label">通知选项</div>
+    <label id="optMsgWrap" class="opt" style="display:none;">
+      <input id="optNotifyMsg" type="checkbox" checked />
+      打开消息通知
+    </label>
+    <label id="optLogWrap" class="opt" style="display:none;">
+      <input id="optNotifyLog" type="checkbox" checked />
+      打开日志通知
+    </label>
+  </div>
+
   <div id="log"></div>
 
 <script>
@@ -120,6 +135,11 @@
   const copyStatus = $("copyStatus");
   const svcInput = $("svcInput");
   const rssiInput = $("rssiInput");
+  const notifyOptions = $("notifyOptions");
+  const optMsgWrap = $("optMsgWrap");
+  const optLogWrap = $("optLogWrap");
+  const optNotifyMsg = $("optNotifyMsg");
+  const optNotifyLog = $("optNotifyLog");
 
   // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
@@ -135,11 +155,8 @@
   // 用 device.id 做“唯一键”（不显示在表格里）
   const rows = new Map();
   const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-  const NUS_NOTIFY_UUIDS = [
-    "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
-    "6e400004-b5a3-f393-e0a9-e50e24dcca9e",
-    "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
-  ];
+  const NUS_NOTIFY_MSG_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_NOTIFY_LOG_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
   let activeEntry = null;
 
   // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
@@ -237,36 +254,39 @@
     });
   }
 
-  async function enableAutoNusNotify(entry) {
-    if (!entry?.connected) return;
+  function updateNotifyOptionsVisibility(entry) {
+    const hasMsg = !!entry?.nusNotifyChars?.get(NUS_NOTIFY_MSG_UUID);
+    const hasLog = !!entry?.nusNotifyChars?.get(NUS_NOTIFY_LOG_UUID);
+    if (optMsgWrap) optMsgWrap.style.display = hasMsg ? "" : "none";
+    if (optLogWrap) optLogWrap.style.display = hasLog ? "" : "none";
+    if (notifyOptions) notifyOptions.style.display = (hasMsg || hasLog) ? "" : "none";
+  }
 
-    let enabledCount = 0;
-    let foundAny = false;
-    for (const uuid of NUS_NOTIFY_UUIDS) {
-      const key = uuid.toLowerCase();
-      const ch = entry.nusNotifyChars.get(key);
-      if (!ch) continue;
-      foundAny = true;
-      if (entry.nusNotifyEnabled.has(key)) continue;
-      try {
-        await ch.startNotifications();
+  async function setNotifyState(entry, uuid, shouldEnable) {
+    const key = uuid.toLowerCase();
+    if (!entry.nusNotifyEnabled) entry.nusNotifyEnabled = new Set();
+    if (!entry.nusNotifyBound) entry.nusNotifyBound = new Set();
+    const ch = entry.nusNotifyChars.get(key);
+    if (!ch) return;
+    if (shouldEnable) {
+      if (entry.nusNotifyEnabled.has(key)) return;
+      await ch.startNotifications();
+      if (!entry.nusNotifyBound.has(key)) {
         bindNotifyListener(ch);
-        entry.nusNotifyEnabled.add(key);
-        enabledCount += 1;
-      } catch (e) {
-        log(`自动启用 Notify 失败：${uuid} - ${e?.message || e}`);
+        entry.nusNotifyBound.add(key);
       }
-    }
-
-    if (!foundAny) {
-      log("未发现 NUS 目标 Notify Characteristic");
+      entry.nusNotifyEnabled.add(key);
       return;
     }
-    if (enabledCount > 0) {
-      log(`已自动启用 NUS Notify：${enabledCount} 个`);
-    } else {
-      log("NUS Notify 已是启用状态");
-    }
+    if (!entry.nusNotifyEnabled.has(key)) return;
+    await ch.stopNotifications();
+    entry.nusNotifyEnabled.delete(key);
+  }
+
+  async function applySelectedNusNotify(entry) {
+    if (!entry?.connected) return;
+    await setNotifyState(entry, NUS_NOTIFY_MSG_UUID, !!optNotifyMsg?.checked);
+    await setNotifyState(entry, NUS_NOTIFY_LOG_UUID, !!optNotifyLog?.checked);
   }
 
   function setCopyStatus(msg, ok) {
@@ -364,7 +384,8 @@
         connecting: false,
         manufacturerData: [],
         nusNotifyChars: new Map(),
-        nusNotifyEnabled: new Set()
+        nusNotifyEnabled: new Set(),
+        nusNotifyBound: new Set()
       };
       rows.set(id, entry);
     }
@@ -433,6 +454,8 @@
     }
     rows.clear();
     tbody.innerHTML = "";
+    activeEntry = null;
+    updateNotifyOptionsVisibility(null);
     log("已清空列表（并尝试断开所有连接）");
   }
 
@@ -626,7 +649,8 @@
       activeEntry = entry;
 
       await enumerateGATT(entry, server, optionalServices);
-      await enableAutoNusNotify(entry);
+      updateNotifyOptionsVisibility(entry);
+      await applySelectedNusNotify(entry);
     } catch (e) {
       entry.connecting = false;
       entry.connected = false;
@@ -648,10 +672,12 @@
     entry.gattServer = null;
     entry.nusNotifyChars = new Map();
     entry.nusNotifyEnabled = new Set();
+    entry.nusNotifyBound = new Set();
     setButtonState(entry, "idle");
     showDetails(entry, "(已断开)", true);
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
     if (activeEntry === entry) activeEntry = null;
+    updateNotifyOptionsVisibility(null);
   }
 
   function showDetails(entry, html, open) {
@@ -672,6 +698,10 @@
         : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
 
       if (!services || services.length === 0) {
+        entry.nusNotifyChars = new Map();
+        entry.nusNotifyEnabled = new Set();
+        entry.nusNotifyBound = new Set();
+        updateNotifyOptionsVisibility(entry);
         showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
         return;
       }
@@ -679,6 +709,7 @@
       const parts = [allowNote];
       entry.nusNotifyChars = new Map();
       entry.nusNotifyEnabled = new Set();
+      entry.nusNotifyBound = new Set();
       for (const svc of services) {
         let chars = null;
         try {
@@ -811,6 +842,16 @@
   if (btnStart) btnStart.textContent = "START SCAN";
   if (btnStop) btnStop.textContent = "STOP";
   if (btnClear) btnClear.textContent = "CLEAR";
+  if (optNotifyMsg) {
+    optNotifyMsg.addEventListener("change", async () => {
+      await applySelectedNusNotify(activeEntry);
+    });
+  }
+  if (optNotifyLog) {
+    optNotifyLog.addEventListener("change", async () => {
+      await applySelectedNusNotify(activeEntry);
+    });
+  }
   btnStart.addEventListener("click", startScan);
   btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
