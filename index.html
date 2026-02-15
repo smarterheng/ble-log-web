@@ -190,6 +190,8 @@
   let scan = null;
   /** @type {WebSocket|null} */
   let logWs = null;
+  /** @type {number|null} */
+  let wsConnectTimer = null;
 
   /** @type {number|null} */
   let refreshTimer = null;
@@ -301,6 +303,10 @@
   }
 
   function disconnectLogServer() {
+    if (wsConnectTimer !== null) {
+      window.clearTimeout(wsConnectTimer);
+      wsConnectTimer = null;
+    }
     if (logWs) {
       try { logWs.onopen = null; logWs.onclose = null; logWs.onerror = null; } catch (_) {}
       try { logWs.close(); } catch (_) {}
@@ -316,31 +322,54 @@
     }
     const manufacturerText = getEntryManufacturerText(activeEntry);
     if (!manufacturerText) {
-      log("连接服务器失败：当前设备无 Manufacturer Data");
+      log("连接服务器失败：当前设备没有 Manufacturer Data");
       return;
     }
 
+    const url = `wss://ble.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
+
     disconnectLogServer();
     setServerUiState("connecting");
+    log(`正在连接日志服务器：${url}`);
 
-    const url = `ws://159.75.131.235:9002/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
-    const ws = new WebSocket(url);
+    let ws = null;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      log(`WebSocket 创建失败：${e?.message || e}`);
+      setServerUiState("idle");
+      return;
+    }
+
     logWs = ws;
+    wsConnectTimer = window.setTimeout(() => {
+      if (logWs !== ws) return;
+      log("连接超时：请检查服务器是否支持对应协议/端口");
+      disconnectLogServer();
+    }, 10000);
 
     ws.onopen = () => {
       if (logWs !== ws) return;
+      if (wsConnectTimer !== null) {
+        window.clearTimeout(wsConnectTimer);
+        wsConnectTimer = null;
+      }
       setServerUiState("connected");
       log("日志服务器已连接");
     };
 
     ws.onerror = () => {
       if (logWs !== ws) return;
-      log("日志服务器连接失败");
+      log("日志服务器连接失败（onerror）");
       disconnectLogServer();
     };
 
     ws.onclose = () => {
       if (logWs !== ws) return;
+      if (wsConnectTimer !== null) {
+        window.clearTimeout(wsConnectTimer);
+        wsConnectTimer = null;
+      }
       logWs = null;
       setServerUiState("idle");
       log("日志服务器已断开");
