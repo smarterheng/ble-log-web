@@ -324,9 +324,13 @@
 
   function forwardLogToServer(content) {
     if (!logWs || logWs.readyState !== WebSocket.OPEN) return;
+    const cleaned = String(content || "")
+      .replace(/\u001b\[[0-9;]*m/g, "") // 去 ANSI 颜色
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
     const payload = {
       ts: Math.floor(Date.now() / 1000), // UTC timestamp (seconds)
-      msg: content
+      msg: cleaned
     };
     try {
       logWs.send(JSON.stringify(payload));
