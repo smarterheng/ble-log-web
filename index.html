@@ -254,10 +254,23 @@
   function log(msg) {
     const t = new Date().toLocaleString();
     logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+    forwardLogToServer(String(msg));
   }
 
   function bleLog(content) {
     logEl.textContent = `${content}\n` + logEl.textContent;
+    forwardLogToServer(String(content));
+  }
+
+  function forwardLogToServer(content) {
+    if (!logWs || logWs.readyState !== WebSocket.OPEN) return;
+    const payload = {
+      ts: Math.floor(Date.now() / 1000), // UTC timestamp (seconds)
+      msg: content
+    };
+    try {
+      logWs.send(JSON.stringify(payload));
+    } catch (_) {}
   }
 
   function dataViewToAscii(dataView) {
