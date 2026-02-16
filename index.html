@@ -251,14 +251,74 @@
     return s.length > 0;
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[c]));
+  }
+
+  function ansiColorToCss(code) {
+    const map = {
+      30: "#000000", 31: "#c62828", 32: "#2e7d32", 33: "#f9a825",
+      34: "#1565c0", 35: "#ad1457", 36: "#00838f", 37: "#cfd8dc",
+      90: "#78909c", 91: "#ef5350", 92: "#66bb6a", 93: "#ffd54f",
+      94: "#42a5f5", 95: "#ec407a", 96: "#26c6da", 97: "#ffffff"
+    };
+    return map[code] || null;
+  }
+
+  function ansiToHtml(text) {
+    const input = String(text || "");
+    const re = /\u001b\[([0-9;]*)m/g;
+    let idx = 0;
+    let fg = null;
+    let out = "";
+    let m = null;
+    while ((m = re.exec(input)) !== null) {
+      const chunk = input.slice(idx, m.index);
+      if (chunk) {
+        const esc = escapeHtml(chunk);
+        out += fg ? `<span style="color:${fg}">${esc}</span>` : esc;
+      }
+      const codes = (m[1] || "0").split(";").map((v) => Number(v)).filter((v) => Number.isFinite(v));
+      if (codes.length === 0) {
+        fg = null;
+      } else {
+        for (const c of codes) {
+          if (c === 0 || c === 39) fg = null;
+          else {
+            const color = ansiColorToCss(c);
+            if (color) fg = color;
+          }
+        }
+      }
+      idx = re.lastIndex;
+    }
+    const tail = input.slice(idx);
+    if (tail) {
+      const esc = escapeHtml(tail);
+      out += fg ? `<span style="color:${fg}">${esc}</span>` : esc;
+    }
+    return out;
+  }
+
+  function prependLogLine(content) {
+    const lineHtml = ansiToHtml(content);
+    logEl.innerHTML = `${lineHtml}<br/>` + logEl.innerHTML;
+  }
+
   function log(msg) {
     const t = new Date().toLocaleString();
-    logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+    prependLogLine(`[${t}] ${msg}`);
     forwardLogToServer(String(msg));
   }
 
   function bleLog(content) {
-    logEl.textContent = `${content}\n` + logEl.textContent;
+    prependLogLine(content);
     forwardLogToServer(String(content));
   }
 
@@ -995,16 +1055,6 @@
     }
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    }[c]));
-  }
-
   // Override: scanner-like card UI
   function setButtonState(entry, state) {
     const btn = entry.tr?.querySelector("button.connect");
@@ -1104,7 +1154,7 @@
   }
   if (btnClearLog) {
     btnClearLog.addEventListener("click", () => {
-      logEl.textContent = "";
+      logEl.innerHTML = "";
     });
   }
   if (btnConnectServer) {
