@@ -327,7 +327,10 @@
     const cleaned = String(content || "")
       .replace(/\u001b\[[0-9;]*m/g, "") // 去 ANSI 颜色
       .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n");
+      .replace(/\r/g, "\n")
+      .replace(/\n{2,}/g, "\n") // 合并连续空行
+      .replace(/\n+$/g, ""); // 去掉末尾换行
+    if (!cleaned) return;
     const payload = {
       ts: Math.floor(Date.now() / 1000), // UTC timestamp (seconds)
       msg: cleaned
