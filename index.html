@@ -922,6 +922,13 @@
         setButtonState(entry, "idle");
         showDetails(entry, "(已断开)", true);
         log(`设备断开：${device.name || "(无名称)"}`);
+        if (activeEntry === entry) {
+          activeEntry = null;
+          disconnectLogServer();
+          updateServerCardVisibility(null);
+          updateNotifyOptionsVisibility(null);
+          updateSendCardVisibility(null);
+        }
       });
 
       const server = await device.gatt.connect();
@@ -936,8 +943,9 @@
       focusOnEntry(entry);
       activeEntry = entry;
 
-      await enumerateGATT(entry, server, optionalServices);
       updateServerCardVisibility(entry);
+      connectLogServer();
+      await enumerateGATT(entry, server, optionalServices);
       updateNotifyOptionsVisibility(entry);
       updateSendCardVisibility(entry);
       await applySelectedNusNotify(entry);
