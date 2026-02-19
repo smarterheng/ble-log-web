@@ -192,6 +192,10 @@
   let logWs = null;
   /** @type {number|null} */
   let wsConnectTimer = null;
+  /** @type {number|null} */
+  let wsReconnectTimer = null;
+  let wsReconnectAttempt = 0;
+  let wsUserDisabled = false;
 
   /** @type {number|null} */
   let refreshTimer = null;
@@ -363,6 +367,49 @@
     return (entry?.manufacturerData || []).map((item) => item.dataAscii).filter(Boolean).join("");
   }
 
+  function clearWsReconnectTimer() {
+    if (wsReconnectTimer !== null) {
+      window.clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+  }
+
+  function clearWsConnectTimer() {
+    if (wsConnectTimer !== null) {
+      window.clearTimeout(wsConnectTimer);
+      wsConnectTimer = null;
+    }
+  }
+
+  function canConnectLogServer() {
+    if (wsUserDisabled) return false;
+    if (!activeEntry?.connected) return false;
+    return !!getEntryManufacturerText(activeEntry);
+  }
+
+  function scheduleWsReconnect(reason) {
+    if (!canConnectLogServer()) return;
+    if (logWs && (logWs.readyState === WebSocket.OPEN || logWs.readyState === WebSocket.CONNECTING)) return;
+    if (wsReconnectTimer !== null) return;
+
+    const delay = Math.min(1000 * (2 ** wsReconnectAttempt), 15000);
+    wsReconnectAttempt = Math.min(wsReconnectAttempt + 1, 6);
+    wsReconnectTimer = window.setTimeout(() => {
+      wsReconnectTimer = null;
+      connectLogServer({ fromAuto: true, silent: true });
+    }, delay);
+    log(`????????${Math.floor(delay / 1000)} ???????${reason}?`);
+  }
+
+  function reconnectLogServerIfNeeded(reason) {
+    if (document.visibilityState === "hidden") return;
+    if (!canConnectLogServer()) return;
+    if (logWs && (logWs.readyState === WebSocket.OPEN || logWs.readyState === WebSocket.CONNECTING)) return;
+    clearWsReconnectTimer();
+    connectLogServer({ fromAuto: true, silent: true });
+    log(`???????????????${reason}?`);
+  }
+
   function setServerUiState(state) {
     if (!serverLed || !btnConnectServer || !btnDisconnectServer) return;
     serverLed.className = "serverLed";
@@ -382,11 +429,11 @@
     btnDisconnectServer.disabled = false;
   }
 
-  function disconnectLogServer() {
-    if (wsConnectTimer !== null) {
-      window.clearTimeout(wsConnectTimer);
-      wsConnectTimer = null;
-    }
+  function disconnectLogServer(options = {}) {
+    const { userAction = false } = options;
+    if (userAction) wsUserDisabled = true;
+    clearWsConnectTimer();
+    clearWsReconnectTimer();
     if (logWs) {
       try { logWs.onopen = null; logWs.onclose = null; logWs.onerror = null; } catch (_) {}
       try { logWs.close(); } catch (_) {}
@@ -395,65 +442,74 @@
     setServerUiState("idle");
   }
 
-  function connectLogServer() {
+  function connectLogServer(options = {}) {
+    const { fromAuto = false, silent = false } = options;
+    wsUserDisabled = false;
+
     if (!activeEntry?.connected) {
-      log("连接服务器失败：请先连接 BLE 设备");
-      return;
+      if (!silent) log("???????????? BLE ??");
+      return false;
     }
+
     const manufacturerText = getEntryManufacturerText(activeEntry);
     if (!manufacturerText) {
-      log("连接服务器失败：当前设备没有 Manufacturer Data");
-      return;
+      if (!silent) log("?????????????? Manufacturer Data");
+      return false;
     }
+
+    if (logWs && logWs.readyState === WebSocket.OPEN) return true;
+    if (logWs && logWs.readyState === WebSocket.CONNECTING) return true;
 
     const url = `wss://ble.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
 
     disconnectLogServer();
     setServerUiState("connecting");
-    log(`正在连接日志服务器：${url}`);
+    if (!silent) log(`??????????${url}`);
 
     let ws = null;
     try {
       ws = new WebSocket(url);
     } catch (e) {
-      log(`WebSocket 创建失败：${e?.message || e}`);
+      log(`WebSocket ?????${e?.message || e}`);
       setServerUiState("idle");
-      return;
+      if (fromAuto) scheduleWsReconnect("create-failed");
+      return false;
     }
 
     logWs = ws;
+    clearWsConnectTimer();
     wsConnectTimer = window.setTimeout(() => {
       if (logWs !== ws) return;
-      log("连接超时：请检查服务器是否支持对应协议/端口");
+      log("???????????????????/??");
       disconnectLogServer();
+      scheduleWsReconnect("timeout");
     }, 10000);
 
     ws.onopen = () => {
       if (logWs !== ws) return;
-      if (wsConnectTimer !== null) {
-        window.clearTimeout(wsConnectTimer);
-        wsConnectTimer = null;
-      }
+      clearWsConnectTimer();
+      clearWsReconnectTimer();
+      wsReconnectAttempt = 0;
       setServerUiState("connected");
-      log("日志服务器已连接");
+      log("????????");
     };
 
     ws.onerror = () => {
       if (logWs !== ws) return;
-      log("日志服务器连接失败（onerror）");
+      log("??????????onerror?");
       disconnectLogServer();
+      scheduleWsReconnect("onerror");
     };
 
     ws.onclose = () => {
       if (logWs !== ws) return;
-      if (wsConnectTimer !== null) {
-        window.clearTimeout(wsConnectTimer);
-        wsConnectTimer = null;
-      }
+      clearWsConnectTimer();
       logWs = null;
       setServerUiState("idle");
-      log("日志服务器已断开");
+      log("????????");
+      scheduleWsReconnect("closed");
     };
+    return true;
   }
 
   function bindNotifyListener(ch) {
@@ -1179,7 +1235,7 @@
   }
   if (btnDisconnectServer) {
     btnDisconnectServer.addEventListener("click", () => {
-      disconnectLogServer();
+      disconnectLogServer({ userAction: true });
       log("日志服务器已断开");
     });
   }
@@ -1206,6 +1262,18 @@
       }
     });
   }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reconnectLogServerIfNeeded("visibilitychange");
+  });
+  window.addEventListener("focus", () => {
+    reconnectLogServerIfNeeded("focus");
+  });
+  window.addEventListener("pageshow", () => {
+    reconnectLogServerIfNeeded("pageshow");
+  });
+  window.addEventListener("online", () => {
+    reconnectLogServerIfNeeded("online");
+  });
 
   updateServerCardVisibility(null);
   setServerUiState("idle");
