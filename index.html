@@ -196,6 +196,12 @@
   let wsReconnectTimer = null;
   let wsReconnectAttempt = 0;
   let wsUserDisabled = false;
+  let wsBoundDeviceId = "";
+  const MAX_PENDING_LOGS = 2000;
+  /** @type {{ts:number,msg:string}[]} */
+  let pendingLogPayloads = [];
+  let pendingLogDeviceId = "";
+  let pendingLogDropped = 0;
 
   /** @type {number|null} */
   let refreshTimer = null;
@@ -346,22 +352,92 @@
     forwardLogToServer(String(content));
   }
 
-  function forwardLogToServer(content) {
-    if (!logWs || logWs.readyState !== WebSocket.OPEN) return;
-    const cleaned = String(content || "")
+  function normalizeLogContent(content) {
+    return String(content || "")
       .replace(/\u001b\[[0-9;]*m/g, "") // 去 ANSI 颜色
       .replace(/\r\n/g, "\n")
       .replace(/\r/g, "\n")
       .replace(/\n{2,}/g, "\n") // 合并连续空行
       .replace(/\n+$/g, ""); // 去掉末尾换行
-    if (!cleaned) return;
-    const payload = {
+  }
+
+  function getActiveDeviceId() {
+    return getEntryManufacturerText(activeEntry) || "";
+  }
+
+  function buildLogPayload(content) {
+    const cleaned = normalizeLogContent(content);
+    if (!cleaned) return null;
+    return {
       ts: Math.floor(Date.now() / 1000), // UTC timestamp (seconds)
       msg: cleaned
     };
+  }
+
+  function canSendPayloadNow(deviceId) {
+    if (!deviceId) return false;
+    if (!logWs || logWs.readyState !== WebSocket.OPEN) return false;
+    return wsBoundDeviceId === deviceId;
+  }
+
+  function sendPayloadNow(payload, deviceId) {
+    if (!canSendPayloadNow(deviceId)) return false;
     try {
       logWs.send(JSON.stringify(payload));
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function resetPendingLogBuffer() {
+    pendingLogPayloads = [];
+    pendingLogDeviceId = "";
+    pendingLogDropped = 0;
+  }
+
+  function enqueuePendingPayload(payload, deviceId) {
+    if (!deviceId || !payload) return;
+    if (pendingLogDeviceId && pendingLogDeviceId !== deviceId) {
+      resetPendingLogBuffer();
+    }
+    pendingLogDeviceId = deviceId;
+    if (pendingLogPayloads.length >= MAX_PENDING_LOGS) {
+      pendingLogPayloads.shift();
+      pendingLogDropped += 1;
+    }
+    pendingLogPayloads.push(payload);
+  }
+
+  function flushPendingPayloads(deviceId) {
+    if (!deviceId) return { sent: 0, dropped: 0, remaining: pendingLogPayloads.length };
+    if (pendingLogDeviceId && pendingLogDeviceId !== deviceId) {
+      resetPendingLogBuffer();
+      return { sent: 0, dropped: 0, remaining: 0 };
+    }
+
+    let sent = 0;
+    while (pendingLogPayloads.length > 0) {
+      const payload = pendingLogPayloads[0];
+      if (!sendPayloadNow(payload, deviceId)) break;
+      pendingLogPayloads.shift();
+      sent += 1;
+    }
+
+    const dropped = pendingLogDropped;
+    pendingLogDropped = 0;
+    if (pendingLogPayloads.length === 0) pendingLogDeviceId = "";
+    return { sent, dropped, remaining: pendingLogPayloads.length };
+  }
+
+  function forwardLogToServer(content) {
+    if (wsUserDisabled) return;
+    const payload = buildLogPayload(content);
+    if (!payload) return;
+    const deviceId = getActiveDeviceId();
+    if (!deviceId) return;
+    if (sendPayloadNow(payload, deviceId)) return;
+    enqueuePendingPayload(payload, deviceId);
   }
 
   function dataViewToAscii(dataView) {
@@ -451,7 +527,10 @@
 
   function disconnectLogServer(options = {}) {
     const { userAction = false } = options;
-    if (userAction) wsUserDisabled = true;
+    if (userAction) {
+      wsUserDisabled = true;
+      resetPendingLogBuffer();
+    }
     clearWsConnectTimer();
     clearWsReconnectTimer();
     if (logWs) {
@@ -459,6 +538,7 @@
       try { logWs.close(); } catch (_) {}
     }
     logWs = null;
+    wsBoundDeviceId = "";
     setServerUiState("idle");
   }
 
@@ -483,6 +563,7 @@
     const url = `wss://ble.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
 
     disconnectLogServer();
+    wsBoundDeviceId = manufacturerText;
     setServerUiState("connecting");
     if (!silent) log(`正在连接日志服务器：${url}`);
 
@@ -490,6 +571,7 @@
     try {
       ws = new WebSocket(url);
     } catch (e) {
+      wsBoundDeviceId = "";
       log(`WebSocket 创建失败：${e?.message || e}`);
       setServerUiState("idle");
       if (fromAuto) scheduleWsReconnect("create-failed");
@@ -511,7 +593,16 @@
       clearWsReconnectTimer();
       wsReconnectAttempt = 0;
       setServerUiState("connected");
-      log("日志服务器已连接");
+      wsBoundDeviceId = manufacturerText;
+      const replay = flushPendingPayloads(manufacturerText);
+      let connectMsg = "日志服务器已连接";
+      if (replay.sent > 0 || replay.dropped > 0) {
+        connectMsg += `，补发 ${replay.sent} 条缓存日志`;
+        if (replay.dropped > 0) {
+          connectMsg += `，丢弃 ${replay.dropped} 条（超过缓存上限 ${MAX_PENDING_LOGS}）`;
+        }
+      }
+      log(connectMsg);
     };
 
     ws.onerror = () => {
@@ -525,6 +616,7 @@
       if (logWs !== ws) return;
       clearWsConnectTimer();
       logWs = null;
+      wsBoundDeviceId = "";
       setServerUiState("idle");
       log("日志服务器已断开");
       scheduleWsReconnect("closed");
@@ -816,6 +908,7 @@
     rows.clear();
     tbody.innerHTML = "";
     activeEntry = null;
+    resetPendingLogBuffer();
     disconnectLogServer();
     updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
@@ -1000,6 +1093,7 @@
         log(`设备断开：${device.name || "(无名称)"}`);
         if (activeEntry === entry) {
           activeEntry = null;
+          resetPendingLogBuffer();
           disconnectLogServer();
           updateServerCardVisibility(null);
           updateNotifyOptionsVisibility(null);
@@ -1051,7 +1145,10 @@
     setButtonState(entry, "idle");
     showDetails(entry, "(已断开)", true);
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
-    if (activeEntry === entry) activeEntry = null;
+    if (activeEntry === entry) {
+      activeEntry = null;
+      resetPendingLogBuffer();
+    }
     disconnectLogServer();
     updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
