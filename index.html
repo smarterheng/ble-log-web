@@ -313,6 +313,26 @@
   function prependLogLine(content) {
     const lineHtml = ansiToHtml(content);
     logEl.innerHTML = `${lineHtml}<br/>` + logEl.innerHTML;
+    window.requestAnimationFrame(() => {
+      revealClearLogButtonIfLogMaxed();
+    });
+  }
+
+  function revealClearLogButtonIfLogMaxed() {
+    if (!logEl || !btnClearLog) return;
+    // 当日志区域开始内部滚动时，说明已达到最大高度（max-height）
+    if (logEl.scrollHeight <= logEl.clientHeight + 1) return;
+
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    const rect = btnClearLog.getBoundingClientRect();
+    const buttonHidden = rect.bottom > viewportH || rect.top < 0;
+    if (!buttonHidden) return;
+
+    btnClearLog.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "auto"
+    });
   }
 
   function log(msg) {
