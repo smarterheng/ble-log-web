@@ -594,6 +594,8 @@
       wsReconnectAttempt = 0;
       setServerUiState("connected");
       wsBoundDeviceId = manufacturerText;
+      let connectMsg1 = "------- 补发前 --------";
+      log(connectMsg1);
       const replay = flushPendingPayloads(manufacturerText);
       let connectMsg = "日志服务器已连接";
       if (replay.sent > 0 || replay.dropped > 0) {
