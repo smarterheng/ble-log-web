@@ -560,7 +560,7 @@
     if (logWs && logWs.readyState === WebSocket.OPEN) return true;
     if (logWs && logWs.readyState === WebSocket.CONNECTING) return true;
 
-    const url = `wss://ble.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
+    const url = `wss://ws-server.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
 
     disconnectLogServer();
     wsBoundDeviceId = manufacturerText;
