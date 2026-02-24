@@ -212,7 +212,6 @@
   const NUS_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_MSG_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_LOG_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
-  const FILTER_COMPANY_ID_HEX = "0x0011";
   let activeEntry = null;
 
   // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
@@ -858,7 +857,12 @@
     entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
     const mfgEl = entry.tr.querySelector(".mfgLine");
-    const mfgText = (entry.manufacturerData || []).map((item) => item.dataAscii).filter(Boolean).join("");
+    const mfgText = (entry.manufacturerData || [])
+      .map((item) => {
+        const tail = String(item?.dataAscii || "");
+        return tail ? `${item.companyId} ${tail}` : `${item.companyId}`;
+      })
+      .join(" | ");
     if (mfgEl) {
       if (mfgText) {
         mfgEl.textContent = mfgText;
@@ -1045,8 +1049,6 @@
     if (rssi <= th) return;
 
     const manufacturerData = parseManufacturerData(event.manufacturerData);
-    const hasTargetCompanyId = manufacturerData.some((item) => item.companyId === FILTER_COMPANY_ID_HEX);
-    if (!hasTargetCompanyId) return;
 
     upsertRow({
       name,
