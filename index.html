@@ -317,9 +317,10 @@
     return out;
   }
 
-  function prependLogLine(content) {
+  function appendLogLine(content) {
     const lineHtml = ansiToHtml(content);
-    logEl.innerHTML = `${lineHtml}<br/>` + logEl.innerHTML;
+    logEl.innerHTML += `${lineHtml}<br/>`;
+    logEl.scrollTop = logEl.scrollHeight;
     window.requestAnimationFrame(() => {
       revealClearLogButtonIfLogMaxed();
     });
@@ -344,12 +345,12 @@
 
   function log(msg) {
     const t = new Date().toLocaleString();
-    prependLogLine(`[${t}] ${msg}`);
+    appendLogLine(`[${t}] ${msg}`);
     forwardLogToServer(String(msg));
   }
 
   function bleLog(content) {
-    prependLogLine(content);
+    appendLogLine(content);
     forwardLogToServer(String(content));
   }
 
