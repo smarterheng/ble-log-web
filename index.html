@@ -197,11 +197,15 @@
   let wsReconnectAttempt = 0;
   let wsUserDisabled = false;
   let wsBoundDeviceId = "";
-  const MAX_PENDING_LOGS = 2000;
+  const MAX_PENDING_LOGS = 10000;
+  const MAX_WS_BUFFERED_AMOUNT = 512 * 1024;
+  const PENDING_FLUSH_INTERVAL_MS = 100;
   /** @type {{ts:number,msg:string}[]} */
   let pendingLogPayloads = [];
   let pendingLogDeviceId = "";
   let pendingLogDropped = 0;
+  /** @type {number|null} */
+  let pendingFlushTimer = null;
 
   /** @type {number|null} */
   let refreshTimer = null;
@@ -384,6 +388,7 @@
 
   function sendPayloadNow(payload, deviceId) {
     if (!canSendPayloadNow(deviceId)) return false;
+    if (typeof logWs.bufferedAmount === "number" && logWs.bufferedAmount > MAX_WS_BUFFERED_AMOUNT) return false;
     try {
       logWs.send(JSON.stringify(payload));
       return true;
@@ -396,6 +401,24 @@
     pendingLogPayloads = [];
     pendingLogDeviceId = "";
     pendingLogDropped = 0;
+  }
+
+  function clearPendingFlushTimer() {
+    if (pendingFlushTimer !== null) {
+      window.clearInterval(pendingFlushTimer);
+      pendingFlushTimer = null;
+    }
+  }
+
+  function ensurePendingFlushTimer() {
+    if (pendingFlushTimer !== null) return;
+    pendingFlushTimer = window.setInterval(() => {
+      const deviceId = getActiveDeviceId();
+      if (!deviceId) return;
+      if (!canSendPayloadNow(deviceId)) return;
+      const replay = flushPendingPayloads(deviceId);
+      if (replay.remaining === 0) clearPendingFlushTimer();
+    }, PENDING_FLUSH_INTERVAL_MS);
   }
 
   function enqueuePendingPayload(payload, deviceId) {
@@ -440,6 +463,7 @@
     if (!deviceId) return;
     if (sendPayloadNow(payload, deviceId)) return;
     enqueuePendingPayload(payload, deviceId);
+    ensurePendingFlushTimer();
   }
 
   function dataViewToAscii(dataView) {
@@ -535,6 +559,7 @@
     }
     clearWsConnectTimer();
     clearWsReconnectTimer();
+    clearPendingFlushTimer();
     if (logWs) {
       try { logWs.onopen = null; logWs.onclose = null; logWs.onerror = null; } catch (_) {}
       try { logWs.close(); } catch (_) {}
@@ -597,12 +622,16 @@
       setServerUiState("connected");
       wsBoundDeviceId = manufacturerText;
       const replay = flushPendingPayloads(manufacturerText);
+      if (replay.remaining > 0) ensurePendingFlushTimer();
       let connectMsg = "日志服务器已连接";
       if (replay.sent > 0 || replay.dropped > 0) {
         connectMsg += `，补发 ${replay.sent} 条缓存日志`;
         if (replay.dropped > 0) {
           connectMsg += `，丢弃 ${replay.dropped} 条（超过缓存上限 ${MAX_PENDING_LOGS}）`;
         }
+      }
+      if (replay.remaining > 0) {
+        connectMsg += `，剩余 ${replay.remaining} 条待发送`;
       }
       log(connectMsg);
     };
@@ -617,6 +646,7 @@
     ws.onclose = () => {
       if (logWs !== ws) return;
       clearWsConnectTimer();
+      clearPendingFlushTimer();
       logWs = null;
       wsBoundDeviceId = "";
       setServerUiState("idle");
