@@ -203,6 +203,7 @@
   const LOG_DB_BATCH_SIZE = 200;
   const MAX_WS_BUFFERED_AMOUNT = 512 * 1024;
   const PENDING_FLUSH_INTERVAL_MS = 150;
+  const ACK_TIMEOUT_MS = 5000;
   /** @type {Promise<IDBDatabase>|null} */
   let logDbPromise = null;
   let pendingFlushInProgress = false;
@@ -210,7 +211,10 @@
   let pendingFlushTimer = null;
   let replayActive = false;
   let replayTotalTarget = 0;
-  let replaySentTotal = 0;
+  let replayAckedTotal = 0;
+  let inflightQid = 0;
+  let inflightDeviceId = "";
+  let inflightSentAtMs = 0;
 
   /** @type {number|null} */
   let refreshTimer = null;
@@ -456,8 +460,10 @@
     if (!deviceId || !payload) return;
     const db = await openLogDb();
     const tx = db.transaction(LOG_DB_STORE, "readwrite");
-    tx.objectStore(LOG_DB_STORE).add({ deviceId, payload });
+    const req = tx.objectStore(LOG_DB_STORE).add({ deviceId, payload });
+    const id = await requestToPromise(req);
     await txDonePromise(tx);
+    return Number(id || 0);
   }
 
   async function countQueuedPayloads(deviceId) {
@@ -507,6 +513,49 @@
     await txDonePromise(tx);
   }
 
+  async function readQueuedPayloadById(id) {
+    if (!id) return null;
+    const db = await openLogDb();
+    const tx = db.transaction(LOG_DB_STORE, "readonly");
+    const req = tx.objectStore(LOG_DB_STORE).get(id);
+    const row = await requestToPromise(req);
+    if (!row) return null;
+    return {
+      id: Number(id),
+      deviceId: row.deviceId,
+      payload: row.payload
+    };
+  }
+
+  async function deleteQueuedPayloadsUpTo(deviceId, maxQid) {
+    if (!deviceId || !maxQid) return { deleted: 0, remaining: 0 };
+    const db = await openLogDb();
+    let deleted = 0;
+
+    const tx = db.transaction(LOG_DB_STORE, "readwrite");
+    const idx = tx.objectStore(LOG_DB_STORE).index("by_device_id");
+    await new Promise((resolve, reject) => {
+      const req = idx.openCursor(IDBKeyRange.only(deviceId));
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+        const qid = Number(cursor.primaryKey || 0);
+        if (qid > 0 && qid <= maxQid) {
+          cursor.delete();
+          deleted += 1;
+        }
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error || new Error("ack delete cursor failed"));
+    });
+    await txDonePromise(tx);
+    const remaining = await countQueuedPayloads(deviceId);
+    return { deleted, remaining };
+  }
+
   function clearPendingFlushTimer() {
     if (pendingFlushTimer !== null) {
       window.clearInterval(pendingFlushTimer);
@@ -519,45 +568,84 @@
     pendingFlushTimer = window.setInterval(() => {
       const deviceId = getActiveDeviceId();
       if (!deviceId) return;
-      void flushPendingPayloads(deviceId).then((replay) => {
-        if (!replay) return;
-        applyReplayResult(replay);
-      });
+      void flushPendingPayloads(deviceId);
     }, PENDING_FLUSH_INTERVAL_MS);
+  }
+
+  function resetInflightState() {
+    inflightQid = 0;
+    inflightDeviceId = "";
+    inflightSentAtMs = 0;
+  }
+
+  function buildLogEnvelope(qid, payload) {
+    return {
+      type: "log",
+      qid,
+      ts: payload.ts,
+      msg: payload.msg
+    };
+  }
+
+  function markReplayAcked(ackedCount) {
+    if (!replayActive || ackedCount <= 0) return;
+    replayAckedTotal += ackedCount;
+    if (replayAckedTotal >= replayTotalTarget) {
+      const done = replayAckedTotal;
+      replayActive = false;
+      replayTotalTarget = 0;
+      replayAckedTotal = 0;
+      log(`缓存日志补发完成，共补发 ${done} 条日志`);
+    }
   }
 
   async function flushPendingPayloads(deviceId) {
     if (!deviceId) return { sent: 0, remaining: 0 };
-    if (pendingFlushInProgress) {
-      const remaining = await countQueuedPayloads(deviceId);
-      return { sent: 0, remaining };
-    }
+    if (!canSendPayloadNow(deviceId)) return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
+    if (pendingFlushInProgress) return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
 
     pendingFlushInProgress = true;
     let sent = 0;
     try {
-      while (canSendPayloadNow(deviceId)) {
-        const batch = await readQueuedPayloadBatch(deviceId, LOG_DB_BATCH_SIZE);
-        if (batch.length === 0) break;
-
-        const sentIds = [];
-        for (const item of batch) {
-          if (!item || item.id == null) continue;
-          if (!item.payload) {
-            sentIds.push(item.id);
-            continue;
-          }
-          if (!sendPayloadNow(item.payload, deviceId)) break;
-          sentIds.push(item.id);
-          sent += 1;
+      // 单飞模式：同一时刻最多一个未 ACK 的 qid，避免重复发送与乱序确认
+      if (inflightQid > 0 && inflightDeviceId === deviceId) {
+        const now = Date.now();
+        if ((now - inflightSentAtMs) < ACK_TIMEOUT_MS) {
+          return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
         }
-
-        if (sentIds.length === 0) break;
-        await deleteQueuedPayloads(sentIds);
-        if (sentIds.length < batch.length) break;
+        const inflightRow = await readQueuedPayloadById(inflightQid);
+        if (!inflightRow || inflightRow.deviceId !== deviceId || !inflightRow.payload) {
+          resetInflightState();
+          return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
+        }
+        const retryEnvelope = buildLogEnvelope(inflightRow.id, inflightRow.payload);
+        if (sendPayloadNow(retryEnvelope, deviceId)) {
+          inflightSentAtMs = now;
+          sent = 1;
+        }
+        return { sent, remaining: await countQueuedPayloads(deviceId) };
       }
-      const remaining = await countQueuedPayloads(deviceId);
-      return { sent, remaining };
+
+      if (inflightQid > 0 && inflightDeviceId !== deviceId) {
+        return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
+      }
+
+      const batch = await readQueuedPayloadBatch(deviceId, 1);
+      if (batch.length === 0) return { sent: 0, remaining: 0 };
+      const item = batch[0];
+      if (!item || item.id == null || !item.payload) {
+        await deleteQueuedPayloads([item?.id].filter((v) => v != null));
+        return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
+      }
+
+      const envelope = buildLogEnvelope(Number(item.id), item.payload);
+      if (sendPayloadNow(envelope, deviceId)) {
+        inflightQid = Number(item.id);
+        inflightDeviceId = deviceId;
+        inflightSentAtMs = Date.now();
+        sent = 1;
+      }
+      return { sent, remaining: await countQueuedPayloads(deviceId) };
     } catch (_) {
       const remaining = await countQueuedPayloads(deviceId);
       return { sent, remaining };
@@ -569,31 +657,27 @@
   function beginReplay(total) {
     replayActive = total > 0;
     replayTotalTarget = total > 0 ? total : 0;
-    replaySentTotal = 0;
+    replayAckedTotal = 0;
     if (replayActive) {
       log(`开始缓存补发，需补发 ${total} 条日志`);
     }
   }
 
-  function applyReplayResult(replay) {
-    if (!replay) return;
-    if (replayActive) {
-      replaySentTotal += Number(replay.sent || 0);
-      if (replaySentTotal >= replayTotalTarget) {
-        const sent = replaySentTotal;
-        replayActive = false;
-        replayTotalTarget = 0;
-        replaySentTotal = 0;
-        log(`缓存日志补发完成，共补发 ${sent} 条日志`);
-      }
+  async function handleServerAck(qid, deviceId) {
+    const ackQid = Number(qid || 0);
+    if (!deviceId || ackQid <= 0) return;
+
+    const res = await deleteQueuedPayloadsUpTo(deviceId, ackQid);
+    if (res.deleted > 0) markReplayAcked(res.deleted);
+
+    if (inflightQid > 0 && inflightDeviceId === deviceId && ackQid >= inflightQid) {
+      resetInflightState();
     }
 
-    if (replay.remaining > 0) {
-      ensurePendingFlushTimer();
-      return;
-    }
+    if (res.remaining > 0) ensurePendingFlushTimer();
+    else clearPendingFlushTimer();
 
-    clearPendingFlushTimer();
+    await flushPendingPayloads(deviceId);
   }
 
   function forwardLogToServer(content) {
@@ -604,8 +688,9 @@
     if (!deviceId) return;
     void enqueuePendingPayload(payload, deviceId)
       .then(() => flushPendingPayloads(deviceId))
-      .then((replay) => {
-        applyReplayResult(replay);
+      .then((state) => {
+        if (!state) return;
+        if (state.remaining > 0) ensurePendingFlushTimer();
       })
       .catch(() => {});
   }
@@ -697,15 +782,13 @@
 
   function disconnectLogServer(options = {}) {
     const { userAction = false } = options;
-    if (userAction) {
-      wsUserDisabled = true;
-      resetPendingLogBuffer();
-    }
+    if (userAction) wsUserDisabled = true;
     clearWsConnectTimer();
     clearWsReconnectTimer();
     clearPendingFlushTimer();
+    resetInflightState();
     if (logWs) {
-      try { logWs.onopen = null; logWs.onclose = null; logWs.onerror = null; } catch (_) {}
+      try { logWs.onopen = null; logWs.onclose = null; logWs.onerror = null; logWs.onmessage = null; } catch (_) {}
       try { logWs.close(); } catch (_) {}
     }
     logWs = null;
@@ -763,6 +846,7 @@
       clearWsConnectTimer();
       clearWsReconnectTimer();
       wsReconnectAttempt = 0;
+      resetInflightState();
       setServerUiState("connected");
       wsBoundDeviceId = manufacturerText;
       log("日志服务器已连接");
@@ -772,9 +856,22 @@
           clearPendingFlushTimer();
           return flushPendingPayloads(manufacturerText);
         })
-        .then((replay) => {
-          applyReplayResult(replay);
+        .then((state) => {
+          if (!state) return;
+          if (state.remaining > 0) ensurePendingFlushTimer();
         });
+    };
+
+    ws.onmessage = (event) => {
+      if (logWs !== ws) return;
+      let data = null;
+      try {
+        data = JSON.parse(String(event.data || ""));
+      } catch (_) {
+        return;
+      }
+      if (!data || data.type !== "ack") return;
+      void handleServerAck(data.qid, wsBoundDeviceId);
     };
 
     ws.onerror = () => {
@@ -788,6 +885,7 @@
       if (logWs !== ws) return;
       clearWsConnectTimer();
       clearPendingFlushTimer();
+      resetInflightState();
       logWs = null;
       wsBoundDeviceId = "";
       setServerUiState("idle");
@@ -1270,7 +1368,6 @@
         log(`设备断开：${device.name || "(无名称)"}`);
         if (activeEntry === entry) {
           activeEntry = null;
-          resetPendingLogBuffer();
           disconnectLogServer();
           updateServerCardVisibility(null);
           updateNotifyOptionsVisibility(null);
@@ -1322,10 +1419,7 @@
     setButtonState(entry, "idle");
     showDetails(entry, "(已断开)", true);
     log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
-    if (activeEntry === entry) {
-      activeEntry = null;
-      resetPendingLogBuffer();
-    }
+    if (activeEntry === entry) activeEntry = null;
     disconnectLogServer();
     updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
