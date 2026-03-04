@@ -202,7 +202,7 @@
   const LOG_DB_STORE = "queue";
   const LOG_DB_BATCH_SIZE = 200;
   const MAX_WS_BUFFERED_AMOUNT = 512 * 1024;
-  const PENDING_FLUSH_INTERVAL_MS = 100;
+  const PENDING_FLUSH_INTERVAL_MS = 150;
   /** @type {Promise<IDBDatabase>|null} */
   let logDbPromise = null;
   let pendingFlushInProgress = false;
@@ -732,16 +732,21 @@
       setServerUiState("connected");
       wsBoundDeviceId = manufacturerText;
       log("日志服务器已连接");
-      void flushPendingPayloads(manufacturerText).then((replay) => {
-        if (!replay) return;
-        if (replay.remaining > 0) ensurePendingFlushTimer();
-        else clearPendingFlushTimer();
-        if (replay.sent > 0 || replay.remaining > 0) {
-          let connectMsg = `缓存日志补发 ${replay.sent} 条`;
-          if (replay.remaining > 0) connectMsg += `，剩余 ${replay.remaining} 条待发送`;
-          log(connectMsg);
-        }
-      });
+      void countQueuedPayloads(manufacturerText)
+        .then((total) => {
+          if (total > 0) log(`开始缓存补发，需补发 ${total} 条日志`);
+          return flushPendingPayloads(manufacturerText);
+        })
+        .then((replay) => {
+          if (!replay) return;
+          if (replay.remaining > 0) ensurePendingFlushTimer();
+          else clearPendingFlushTimer();
+          if (replay.sent > 0 || replay.remaining > 0) {
+            let connectMsg = `缓存日志补发 ${replay.sent} 条`;
+            if (replay.remaining > 0) connectMsg += `，剩余 ${replay.remaining} 条待发送`;
+            log(connectMsg);
+          }
+        });
     };
 
     ws.onerror = () => {
