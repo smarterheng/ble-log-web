@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -24,6 +24,9 @@
     .label { font-weight: 600; margin-bottom: 4px; font-size: 13px; color: #23313c; }
     input[type="text"], select { padding: 10px 12px; width: 100%; border: 1px solid #ccd6dd; border-radius: 8px; background: #fff; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+    .formatOptions { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; color: #23313c; font-size: 13px; font-weight: 600; }
+    .formatOptions label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+    .formatOptions input { margin: 0; }
     button { padding: 10px 14px; border: 0; border-radius: 8px; background: #111; color: #fff; font-weight: 700; letter-spacing: .2px; }
     button[disabled] { opacity: .55; }
     .subhint { color: var(--muted); font-size: 12px; line-height: 1.3; }
@@ -34,26 +37,20 @@
     td { padding: 0; border: 0; }
     .deviceCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 12px; }
     .deviceHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .nameLine { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .name { font-size: 24px; font-weight: 600; line-height: 1.1; }
+    .mfgInline { color: #6f7a83; font-size: 12px; font-weight: 600; line-height: 1.2; }
     .meta { color: #54606a; font-size: 13px; font-weight: 700; margin-top: 2px; }
     .metrics { display: flex; gap: 14px; margin-top: 8px; font-size: 13px; align-items: center; }
-    .mfgLine { margin-top: 4px; font-size: 13px; font-weight: 700; color: #54606a; }
     .connect { min-width: 132px; }
     .detailsCard { background: #fff; border-bottom: 1px solid #d4dce2; padding: 8px 12px 12px; }
-    .notifyOptions { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
-    .notifyOptions .label { margin-bottom: 8px; }
-    .notifyOptions .opt { display: block; margin: 6px 0; font-size: 14px; color: #23313c; }
-    .serverCard { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
-    .serverRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .serverLed { width: 12px; height: 12px; border-radius: 50%; background: #9aa4ad; border: 1px solid #7d8791; }
-    .serverLed.connecting { background: #d63f3f; border-color: #b82f2f; }
-    .serverLed.connected { background: #27a845; border-color: #1f8a38; }
-    .sendCard { margin: 8px 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #d4dce2; border-radius: 8px; }
+    .sendCard { margin: 8px 0 0; padding: 10px 12px; background: #fff; border-top: 1px solid #d4dce2; border-bottom: 1px solid #d4dce2; }
     .sendRow { display: flex; align-items: center; gap: 8px; }
     .sendPrefix { font-weight: 700; color: #23313c; min-width: 24px; text-align: right; }
     .sendInput { flex: 1; }
-    #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 8px; margin: 12px; max-height: 600px; overflow-y: auto; }
-    .logActions { margin: 0 12px 12px; text-align: center; }
+    .sendHexOpt { display: inline-flex; align-items: center; gap: 4px; color: #23313c; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .sendHexOpt input { margin: 0; }
+    #log { white-space: pre-wrap; background: #0b1020; color: #d7e3ff; padding: 10px; border-radius: 0; margin: 0; width: 100%; max-width: 100%; min-height: 160px; overflow-y: auto; overflow-x: hidden; overflow-wrap: anywhere; word-break: break-word; touch-action: pan-y; overscroll-behavior-x: none; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 12px; }
     .btnSmall { padding: 8px 10px; margin: 0; font-size: 12px; border-radius: 8px; }
     .btnSmall[disabled] { opacity: 0.6; }
     details { margin: 0; }
@@ -71,87 +68,42 @@
 </head>
 <body>
   <h2 class="pageTitle">BLE log terminal</h2>
-  <h2>BLE 扫描（Web Bluetooth）</h2>
-
-  <div class="hint">
-    <b>RSSI 扫描：</b>需要 Chrome(安卓) 并通常要在
-    <a class="mono" href="chrome://flags/#enable-experimental-web-platform-features" target="_blank" rel="noopener">chrome://flags/#enable-experimental-web-platform-features</a>
-    开启实验特性（该地址无法在网页内直接跳转，请复制后粘贴到地址栏）。
-    <button id="btnCopyFlags" class="btnSmall" type="button">复制链接</button>
-    <span id="copyStatus" class="subhint"></span>
-    <br/>
-  </div>
-
-  <div class="row">
-    <div class="label">可访问服务（optionalServices，逗号分隔）</div>
-    <input id="svcInput" type="text" value="6e400001-b5a3-f393-e0a9-e50e24dcca9e" />
-  </div>
-
-  <div class="row">
-    <div class="label">RSSI 过滤阈值（dBm，仅显示大于该值的设备）</div>
-    <input id="rssiInput" type="text" value="-65" />
-  </div>
+  <h2>BLE Connection (Web Bluetooth)</h2>
 
   <div class="actions">
-    <button id="btnStart">开始扫描</button>
-    <button id="btnStop" disabled>停止扫描</button>
-    <button id="btnClear">清空列表</button>
-  </div>
-
-  <div class="row" style="margin-top: 14px;">
-    <div class="label">数据格式：</div>
-    <select id="notifyFormat">
-      <option value="hex">Hex</option>
-      <option value="text" selected>Text</option>
-    </select>
+    <button id="btnStart">CONNECT</button>
+    <button id="btnStop" disabled style="display:none;">STOP</button>
+    <button id="btnClear">CLEAR</button>
+    <div class="formatOptions" role="radiogroup" aria-label="Format">
+      <span>Format:</span>
+      <label><input type="radio" name="notifyFormat" value="hex" /> Hex</label>
+      <label><input type="radio" name="notifyFormat" value="text" checked /> Text</label>
+    </div>
   </div>
 
   <table>
     <thead>
       <tr>
-        <th>名称</th>
+        <th>Name</th>
         <th>RSSI</th>
-        <th>最近一次出现</th>
-        <th>操作</th>
+        <th>Last Seen</th>
+        <th>Action</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
 
   <div id="sendCard" class="sendCard" style="display:none;">
-    <div class="label">消息发送</div>
     <div class="sendRow">
       <span id="sendPrefix" class="sendPrefix">0x</span>
       <input id="sendInput" class="sendInput" type="text"/>
-      <button id="btnSend" type="button">发送</button>
-    </div>
-  </div>
-
-  <div id="notifyOptions" class="notifyOptions" style="display:none;">
-    <div class="label">通知选项</div>
-    <label id="optMsgWrap" class="opt" style="display:none;">
-      <input id="optNotifyMsg" type="checkbox" checked />
-      打开消息通知
-    </label>
-    <label id="optLogWrap" class="opt" style="display:none;">
-      <input id="optNotifyLog" type="checkbox" checked />
-      打开日志通知
-    </label>
-  </div>
-
-  <div id="serverCard" class="serverCard" style="display:none;">
-    <div class="label">连接服务器</div>
-    <div class="serverRow">
-      <span id="serverLed" class="serverLed" aria-hidden="true"></span>
-      <button id="btnConnectServer" type="button">连接日志服务器</button>
-      <button id="btnDisconnectServer" type="button" disabled>断开连接</button>
+      <label class="sendHexOpt"><input id="sendHexMode" type="checkbox" checked /> Hex</label>
+      <button id="btnSend" type="button">Send</button>
+      <button id="btnClearLog" type="button">Clear Log</button>
     </div>
   </div>
 
   <div id="log"></div>
-  <div class="logActions">
-    <button id="btnClearLog" type="button">清空日志</button>
-  </div>
 
 <script>
 (() => {
@@ -161,25 +113,16 @@
   const btnStart = $("btnStart");
   const btnStop = $("btnStop");
   const btnClear = $("btnClear");
-  const notifyFormat = $("notifyFormat");
+  const notifyFormatInputs = Array.from(document.querySelectorAll('input[name="notifyFormat"]'));
   const btnCopyFlags = $("btnCopyFlags");
   const copyStatus = $("copyStatus");
-  const svcInput = $("svcInput");
   const rssiInput = $("rssiInput");
-  const notifyOptions = $("notifyOptions");
-  const optMsgWrap = $("optMsgWrap");
-  const optLogWrap = $("optLogWrap");
-  const optNotifyMsg = $("optNotifyMsg");
-  const optNotifyLog = $("optNotifyLog");
   const sendCard = $("sendCard");
   const sendPrefix = $("sendPrefix");
   const sendInput = $("sendInput");
+  const sendHexMode = $("sendHexMode");
   const btnSend = $("btnSend");
   const btnClearLog = $("btnClearLog");
-  const serverCard = $("serverCard");
-  const serverLed = $("serverLed");
-  const btnConnectServer = $("btnConnectServer");
-  const btnDisconnectServer = $("btnDisconnectServer");
 
   // 只显示最近 10 秒出现过的设备（已连接设备不会被自动剔除）
   const MAX_AGE_MS = 10_000;
@@ -225,7 +168,14 @@
   const NUS_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_MSG_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
   const NUS_NOTIFY_LOG_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
+  const DEFAULT_OPTIONAL_SERVICES_RAW = NUS_SERVICE_UUID;
   const FILTER_COMPANY_ID_HEX = "0x1100";
+  const PRECONNECT_ADVERTISEMENT_TIMEOUT_MS = 3000;
+  const BLE_RECONNECT_BASE_DELAY_MS = 1000;
+  const BLE_RECONNECT_MAX_DELAY_MS = 15000;
+  const BLE_RECONNECT_MAX_ATTEMPTS = 8;
+  const BLE_CONNECT_SETTLE_DELAY_MS = 300;
+  const BLE_CONNECT_RETRY_DELAYS_MS = [0, 600, 1500];
   let activeEntry = null;
 
   // Web Bluetooth 允许的标准 service name（别名）在不同浏览器实现中可能有差异；
@@ -287,10 +237,10 @@
 
   function ansiColorToCss(code) {
     const map = {
-      30: "#000000", 31: "#c62828", 32: "#2e7d32", 33: "#f9a825",
-      34: "#1565c0", 35: "#ad1457", 36: "#00838f", 37: "#cfd8dc",
-      90: "#78909c", 91: "#ef5350", 92: "#66bb6a", 93: "#ffd54f",
-      94: "#42a5f5", 95: "#ec407a", 96: "#26c6da", 97: "#ffffff"
+      30: "#8b949e", 31: "#ff0000", 32: "#00ff00", 33: "#ffff00",
+      34: "#0000ff", 35: "#ff00ff", 36: "#00ffff", 37: "#ffffff",
+      90: "#8b949e", 91: "#ff0000", 92: "#00ff00", 93: "#ffff00",
+      94: "#0000ff", 95: "#ff00ff", 96: "#00ffff", 97: "#ffffff"
     };
     return map[code] || null;
   }
@@ -330,9 +280,10 @@
     return out;
   }
 
-  function appendLogLine(content) {
+  function appendLogLine(content, options = {}) {
+    const { forceBreak = true } = options;
     const lineHtml = ansiToHtml(content);
-    logEl.innerHTML += `${lineHtml}<br/>`;
+    logEl.innerHTML += forceBreak ? `${lineHtml}<br/>` : lineHtml;
     logEl.scrollTop = logEl.scrollHeight;
     window.requestAnimationFrame(() => {
       revealClearLogButtonIfLogMaxed();
@@ -359,25 +310,39 @@
   function log(msg) {
     const t = new Date().toLocaleString();
     appendLogLine(`[${t}] ${msg}`);
-    forwardLogToServer(String(msg));
   }
 
-  function bleLog(content) {
-    appendLogLine(content);
+  function bleLog(content, options = {}) {
+    appendLogLine(content, options);
     forwardLogToServer(String(content));
   }
 
+  function isRemoteForwardablePayload(payload) {
+    const msg = String(payload?.msg || "");
+    if (!msg) return false;
+    return !(
+      msg.includes("Connecting to log server:") ||
+      msg.includes("正在连接日志服务器") ||
+      msg.includes("Log server connected") ||
+      msg.includes("Log server disconnected") ||
+      msg.includes("Starting cached log replay") ||
+      msg.includes("Cached log replay completed") ||
+      msg.includes("Page loaded") ||
+      msg.includes("Connected:") ||
+      msg.includes("Disconnected:")
+    );
+  }
+
   function normalizeLogContent(content) {
+    // 保留 ANSI 颜色控制码，方便远程日志客户端渲染彩色日志。
     return String(content || "")
-      .replace(/\u001b\[[0-9;]*m/g, "") // 去 ANSI 颜色
       .replace(/\r\n/g, "\n")
       .replace(/\r/g, "\n")
-      .replace(/\n{2,}/g, "\n") // 合并连续空行
-      .replace(/\n+$/g, ""); // 去掉末尾换行
+      .replace(/\n{2,}/g, "\n"); // 合并连续空行
   }
 
   function getActiveDeviceId() {
-    return getEntryManufacturerText(activeEntry) || "";
+    return getEntryBroadcastName(activeEntry) || "";
   }
 
   function buildLogPayload(content) {
@@ -595,7 +560,7 @@
       replayActive = false;
       replayTotalTarget = 0;
       replayAckedTotal = 0;
-      log(`缓存日志补发完成，共补发 ${done} 条日志`);
+      log(`Cached log replay completed. Replayed ${done} log(s).`);
     }
   }
 
@@ -637,6 +602,11 @@
         await deleteQueuedPayloads([item?.id].filter((v) => v != null));
         return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
       }
+      if (!isRemoteForwardablePayload(item.payload)) {
+        await deleteQueuedPayloads([item.id]);
+        resetInflightState();
+        return { sent: 0, remaining: await countQueuedPayloads(deviceId) };
+      }
 
       const envelope = buildLogEnvelope(Number(item.id), item.payload);
       if (sendPayloadNow(envelope, deviceId)) {
@@ -659,7 +629,7 @@
     replayTotalTarget = total > 0 ? total : 0;
     replayAckedTotal = 0;
     if (replayActive) {
-      log(`开始缓存补发，需补发 ${total} 条日志`);
+      log(`Starting cached log replay. ${total} log(s) pending.`);
     }
   }
 
@@ -718,6 +688,26 @@
     return (entry?.manufacturerData || []).map((item) => item.dataAscii).filter(Boolean).join("");
   }
 
+  function getEntryBroadcastName(entry) {
+    const name = entry?.grantedDevice?.name || entry?.advDevice?.name || entry?.name || "";
+    const normalized = String(name).trim();
+    if (!normalized || normalized === "(Unnamed)") return "";
+    return normalized;
+  }
+
+  function inferModelFromBroadcastName(name) {
+    const normalized = String(name || "").trim();
+    if (normalized.startsWith("AB_A")) return "G30";
+    if (normalized.startsWith("AB_G")) return "G40";
+    return "";
+  }
+
+  function getEntryModel(entry) {
+    const manufacturerModel = getEntryManufacturerText(entry);
+    if (manufacturerModel) return manufacturerModel;
+    return inferModelFromBroadcastName(getEntryBroadcastName(entry));
+  }
+
   function clearWsReconnectTimer() {
     if (wsReconnectTimer !== null) {
       window.clearTimeout(wsReconnectTimer);
@@ -735,7 +725,7 @@
   function canConnectLogServer() {
     if (wsUserDisabled) return false;
     if (!activeEntry?.connected) return false;
-    return !!getEntryManufacturerText(activeEntry);
+    return !!getEntryBroadcastName(activeEntry);
   }
 
   function scheduleWsReconnect(reason) {
@@ -749,7 +739,7 @@
       wsReconnectTimer = null;
       connectLogServer({ fromAuto: true, silent: true });
     }, delay);
-    log(`日志服务器断开，${Math.floor(delay / 1000)} 秒后自动重连（${reason}）`);
+    log(`Log server disconnected. Reconnecting in ${Math.floor(delay / 1000)}s (${reason}).`);
   }
 
   function reconnectLogServerIfNeeded(reason) {
@@ -758,26 +748,11 @@
     if (logWs && (logWs.readyState === WebSocket.OPEN || logWs.readyState === WebSocket.CONNECTING)) return;
     clearWsReconnectTimer();
     connectLogServer({ fromAuto: true, silent: true });
-    log(`前台恢复，尝试重连日志服务器（${reason}）`);
+    log(`Page resumed. Reconnecting to log server (${reason}).`);
   }
 
   function setServerUiState(state) {
-    if (!serverLed || !btnConnectServer || !btnDisconnectServer) return;
-    serverLed.className = "serverLed";
-    if (state === "idle") {
-      btnConnectServer.disabled = false;
-      btnDisconnectServer.disabled = true;
-      return;
-    }
-    if (state === "connecting") {
-      serverLed.classList.add("connecting");
-      btnConnectServer.disabled = true;
-      btnDisconnectServer.disabled = true;
-      return;
-    }
-    serverLed.classList.add("connected");
-    btnConnectServer.disabled = true;
-    btnDisconnectServer.disabled = false;
+    // 日志服务器连接完全自动进行，不再显示服务器连接 UI。
   }
 
   function disconnectLogServer(options = {}) {
@@ -801,32 +776,32 @@
     wsUserDisabled = false;
 
     if (!activeEntry?.connected) {
-      if (!silent) log("连接服务器失败：请先连接 BLE 设备");
+      if (!silent) log("Log server connection failed: connect a BLE device first.");
       return false;
     }
 
-    const manufacturerText = getEntryManufacturerText(activeEntry);
-    if (!manufacturerText) {
-      if (!silent) log("连接服务器失败：当前设备没有 Manufacturer Data");
+    const broadcastName = getEntryBroadcastName(activeEntry);
+    if (!broadcastName) {
+      if (!silent) log("Log server connection failed: current device has no available BLE advertised name.");
       return false;
     }
 
     if (logWs && logWs.readyState === WebSocket.OPEN) return true;
     if (logWs && logWs.readyState === WebSocket.CONNECTING) return true;
 
-    const url = `wss://ws-server.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(manufacturerText)}`;
+    const url = `wss://ws-server.wszgdhz.com/ws/log?token=CHANGE_ME_TOKEN&device_id=${encodeURIComponent(broadcastName)}`;
 
     disconnectLogServer();
-    wsBoundDeviceId = manufacturerText;
+    wsBoundDeviceId = broadcastName;
     setServerUiState("connecting");
-    if (!silent) log(`正在连接日志服务器：${url}`);
+    if (!silent) log(`Connecting to log server: ${url}`);
 
     let ws = null;
     try {
       ws = new WebSocket(url);
     } catch (e) {
       wsBoundDeviceId = "";
-      log(`WebSocket 创建失败：${e?.message || e}`);
+      log(`WebSocket creation failed: ${e?.message || e}`);
       setServerUiState("idle");
       if (fromAuto) scheduleWsReconnect("create-failed");
       return false;
@@ -836,7 +811,7 @@
     clearWsConnectTimer();
     wsConnectTimer = window.setTimeout(() => {
       if (logWs !== ws) return;
-      log("连接超时：请检查服务器是否支持对应协议/端口");
+      log("Connection timed out. Please check whether the server supports the protocol/port.");
       disconnectLogServer();
       scheduleWsReconnect("timeout");
     }, 10000);
@@ -848,13 +823,13 @@
       wsReconnectAttempt = 0;
       resetInflightState();
       setServerUiState("connected");
-      wsBoundDeviceId = manufacturerText;
-      log("日志服务器已连接");
-      void countQueuedPayloads(manufacturerText)
+      wsBoundDeviceId = broadcastName;
+      log("Log server connected.");
+      void countQueuedPayloads(broadcastName)
         .then((total) => {
           beginReplay(total);
           clearPendingFlushTimer();
-          return flushPendingPayloads(manufacturerText);
+          return flushPendingPayloads(broadcastName);
         })
         .then((state) => {
           if (!state) return;
@@ -870,13 +845,26 @@
       } catch (_) {
         return;
       }
-      if (!data || data.type !== "ack") return;
-      void handleServerAck(data.qid, wsBoundDeviceId);
+      if (!data) return;
+      if (data.type === "ack") {
+        void handleServerAck(data.qid, wsBoundDeviceId);
+        return;
+      }
+      if (data.type === "send") {
+        if (data.device_id && String(data.device_id) !== wsBoundDeviceId) return;
+        const msg = String(data.msg ?? "");
+        if (!msg) return;
+        const encode = String(data.encode || "text").toLowerCase();
+        const displayMsg = encode === "hex" ? `0x${msg}` : msg;
+        const t = new Date().toLocaleString();
+        appendLogLine(`[${t}] BLE Send: ${displayMsg}`);
+        void sendServerMessageToBle({ msg, encode });
+      }
     };
 
     ws.onerror = () => {
       if (logWs !== ws) return;
-      log("日志服务器连接失败（onerror）");
+      log("Log server connection failed (onerror).");
       disconnectLogServer();
       scheduleWsReconnect("onerror");
     };
@@ -889,7 +877,7 @@
       logWs = null;
       wsBoundDeviceId = "";
       setServerUiState("idle");
-      log("日志服务器已断开");
+      log("Log server disconnected.");
       scheduleWsReconnect("closed");
     };
     return true;
@@ -899,7 +887,7 @@
     ch.addEventListener("characteristicvaluechanged", (event) => {
       const dv = event.target.value;
       const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-      const mode = notifyFormat?.value === "text" ? "text" : "hex";
+      const mode = getNotifyFormatValue() === "text" ? "text" : "hex";
       if (mode === "hex") {
         const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join(" ");
         bleLog(hex);
@@ -911,16 +899,12 @@
       } catch (_) {
         text = "";
       }
-      bleLog(text);
+      bleLog(text, { forceBreak: false });
     });
   }
 
   function updateNotifyOptionsVisibility(entry) {
-    const hasMsg = !!entry?.nusNotifyChars?.get(NUS_NOTIFY_MSG_UUID);
-    const hasLog = !!entry?.nusNotifyChars?.get(NUS_NOTIFY_LOG_UUID);
-    if (optMsgWrap) optMsgWrap.style.display = hasMsg ? "" : "none";
-    if (optLogWrap) optLogWrap.style.display = hasLog ? "" : "none";
-    if (notifyOptions) notifyOptions.style.display = (hasMsg || hasLog) ? "" : "none";
+    // 通知默认自动启用，界面不再显示通知选项。
   }
 
   function updateSendCardVisibility(entry) {
@@ -929,25 +913,67 @@
   }
 
   function updateServerCardVisibility(entry) {
+    if (!entry?.connected) disconnectLogServer();
+  }
+
+  function updateLogVisibility(entry) {
     const shouldShow = !!entry?.connected;
-    if (serverCard) serverCard.style.display = shouldShow ? "" : "none";
-    if (!shouldShow) disconnectLogServer();
+    if (logEl) logEl.style.display = shouldShow ? "" : "none";
+    if (!shouldShow) {
+      if (logEl) logEl.style.height = "";
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      positionSendCardAtViewportTop();
+    });
+  }
+
+  function positionSendCardAtViewportTop() {
+    if (!sendCard || sendCard.style.display === "none" || !logEl || logEl.style.display === "none") return;
+
+    // 先给日志框一个足够高度，让页面有滚动空间可以把发送框顶到视窗顶部。
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    logEl.style.height = `${Math.max(160, viewportH)}px`;
+
+    sendCard.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+
+    window.requestAnimationFrame(() => {
+      resizeLogToViewportBottom();
+      sendCard.scrollIntoView({ block: "start", inline: "nearest", behavior: "auto" });
+    });
+  }
+
+  function resizeLogToViewportBottom() {
+    if (!logEl || logEl.style.display === "none") return;
+    const rect = logEl.getBoundingClientRect();
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    const bottomPadding = 0;
+    const h = Math.max(160, Math.floor(viewportH - rect.top - bottomPadding));
+    logEl.style.height = `${h}px`;
   }
 
   function updateDataFormatUI() {
-    const isHex = notifyFormat?.value === "hex";
+    updateSendFormatUI();
+  }
+
+  function updateSendFormatUI() {
+    const isHex = !!sendHexMode?.checked;
     if (sendPrefix) sendPrefix.style.display = isHex ? "" : "none";
-    if (sendInput) sendInput.placeholder = isHex ? "请输入Hex字节流" : "请输入文本";
+    if (sendInput) sendInput.placeholder = isHex ? "Enter hex bytes" : "Enter text";
+  }
+
+  function getNotifyFormatValue() {
+    return notifyFormatInputs.find((input) => input.checked)?.value === "hex" ? "hex" : "text";
   }
 
   function parseHexInputToBytes(hexText) {
     const raw = String(hexText || "").replace(/\s+/g, "");
     if (raw.length === 0) return new Uint8Array();
     if (!/^[0-9a-fA-F]+$/.test(raw)) {
-      throw new Error("Hex 输入包含非十六进制字符");
+      throw new Error("Hex input contains non-hex characters.");
     }
     if (raw.length % 2 !== 0) {
-      throw new Error("Hex 输入长度必须为偶数");
+      throw new Error("Hex input length must be even.");
     }
     const out = new Uint8Array(raw.length / 2);
     for (let i = 0; i < raw.length; i += 2) {
@@ -959,16 +985,16 @@
   async function sendMessage() {
     const entry = activeEntry;
     if (!entry?.connected || !entry?.nusWriteChar) {
-      log("发送失败：当前设备未连接或不支持消息发送");
+      log("Send failed: current device is not connected or does not support message sending.");
       return;
     }
-    const isHex = notifyFormat?.value === "hex";
+    const isHex = !!sendHexMode?.checked;
     const input = sendInput?.value ?? "";
     let bytes = null;
     try {
       bytes = isHex ? parseHexInputToBytes(input) : new TextEncoder().encode(input);
     } catch (e) {
-      log(`发送失败：${e?.message || e}`);
+      log(`Send failed: ${e?.message || e}`);
       return;
     }
 
@@ -979,9 +1005,35 @@
       } else {
         await ch.writeValue(bytes);
       }
-      log(`已发送 ${bytes.byteLength} 字节`);
+      log(`Sent ${bytes.byteLength} byte(s).`);
     } catch (e) {
-      log(`发送失败：${e?.message || e}`);
+      log(`Send failed: ${e?.message || e}`);
+    }
+  }
+
+  async function writeBytesToBle(entry, bytes) {
+    if (!entry?.connected || !entry?.nusWriteChar) {
+      throw new Error("current device is not connected or does not support message sending");
+    }
+    const ch = entry.nusWriteChar;
+    if (typeof ch.writeValueWithoutResponse === "function") {
+      await ch.writeValueWithoutResponse(bytes);
+      return;
+    }
+    await ch.writeValue(bytes);
+  }
+
+  async function sendServerMessageToBle({ msg, encode }) {
+    const entry = activeEntry;
+    const model = getEntryModel(entry);
+    if (model !== "G30") return;
+
+    let bytes = null;
+    try {
+      bytes = encode === "hex" ? parseHexInputToBytes(msg) : new TextEncoder().encode(msg);
+      await writeBytesToBle(entry, bytes);
+    } catch (e) {
+      log(`BLE Send failed: ${e?.message || e}`);
     }
   }
 
@@ -1008,8 +1060,8 @@
 
   async function applySelectedNusNotify(entry) {
     if (!entry?.connected) return;
-    await setNotifyState(entry, NUS_NOTIFY_MSG_UUID, !!optNotifyMsg?.checked);
-    await setNotifyState(entry, NUS_NOTIFY_LOG_UUID, !!optNotifyLog?.checked);
+    await setNotifyState(entry, NUS_NOTIFY_MSG_UUID, true);
+    await setNotifyState(entry, NUS_NOTIFY_LOG_UUID, true);
   }
 
   function setCopyStatus(msg, ok) {
@@ -1034,18 +1086,18 @@
 
     if (state === "idle") {
       btn.disabled = false;
-      btn.textContent = "连接";
+      btn.textContent = "CONNECT";
       badge.textContent = "";
       badge.className = "chip status";
     } else if (state === "connecting") {
       btn.disabled = true;
-      btn.textContent = "连接中…";
-      badge.textContent = "连接中";
+      btn.textContent = "CONNECTING";
+      badge.textContent = "CONNECTING";
       badge.className = "chip status";
     } else if (state === "connected") {
       btn.disabled = false;
-      btn.textContent = "断开";
-      badge.textContent = "已连接";
+      btn.textContent = "DISCONNECT";
+      badge.textContent = "CONNECTED";
       badge.className = "chip status ok";
     }
   }
@@ -1059,7 +1111,7 @@
       <td class="mono rssi"></td>
       <td class="mono last"></td>
       <td>
-        <button class="btnSmall connect">连接</button>
+        <button class="btnSmall connect">CONNECT</button>
         <span class="chip status"></span>
       </td>
     `;
@@ -1069,8 +1121,8 @@
     detailsTr.innerHTML = `
       <td colspan="4">
         <details>
-          <summary>服务与特征（Service / Characteristic）</summary>
-          <div class="detailBody">(未连接)</div>
+          <summary>Service / Characteristic</summary>
+          <div class="detailBody">(Not connected)</div>
         </details>
       </td>
     `;
@@ -1096,6 +1148,7 @@
 
     if (!entry) {
       entry = {
+        id,
         tr: null, detailsTr: null,
         lastSeenMs: now,
         rssi: undefined,
@@ -1106,10 +1159,17 @@
         connected: false,
         connecting: false,
         manufacturerData: [],
+        advertisementDevice: null,
+        advertisementHandler: null,
         nusWriteChar: null,
         nusNotifyChars: new Map(),
         nusNotifyEnabled: new Set(),
-        nusNotifyBound: new Set()
+        nusNotifyBound: new Set(),
+        manualDisconnect: false,
+        bleReconnectTimer: null,
+        bleReconnectAttempt: 0,
+        gattDisconnectDevice: null,
+        gattDisconnectHandler: null
       };
       rows.set(id, entry);
     }
@@ -1117,25 +1177,36 @@
     ensureRows(entry);
 
     entry.lastSeenMs = now;
-    entry.name = name || "(无名称)";
+    entry.name = name || "(Unnamed)";
     if (typeof rssi === "number") entry.rssi = rssi;
     if (advDevice) entry.advDevice = advDevice;
     if (Array.isArray(manufacturerData)) entry.manufacturerData = manufacturerData;
 
     entry.tr.querySelector(".name").textContent = entry.name;
-    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "(未知)";
-    entry.tr.querySelector(".last").textContent = new Date(now).toLocaleTimeString();
-    entry.tr.querySelector(".rssi").textContent = (typeof entry.rssi === "number") ? `${entry.rssi} dBm` : "Unknown RSSI";
+    const rssiEl = entry.tr.querySelector(".rssi");
+    if (rssiEl) {
+      if (typeof entry.rssi === "number") {
+        rssiEl.textContent = `${entry.rssi} dBm`;
+        rssiEl.style.display = "";
+      } else {
+        rssiEl.textContent = "";
+        rssiEl.style.display = "none";
+      }
+    }
     entry.tr.querySelector(".last").textContent = `last seen: ${new Date(now).toLocaleTimeString()}`;
-    const mfgEl = entry.tr.querySelector(".mfgLine");
+    const mfgEl = entry.tr.querySelector(".mfgInline");
     const mfgText = (entry.manufacturerData || []).map((item) => item.dataAscii).filter(Boolean).join("");
+    const inferredModel = inferModelFromBroadcastName(entry.name);
     if (mfgEl) {
       if (mfgText) {
         mfgEl.textContent = mfgText;
         mfgEl.style.display = "";
+      } else if (inferredModel) {
+        mfgEl.textContent = inferredModel;
+        mfgEl.style.display = "";
       } else {
-        mfgEl.textContent = "";
-        mfgEl.style.display = "none";
+        mfgEl.textContent = "Model: Unknown";
+        mfgEl.style.display = "";
       }
     }
 
@@ -1147,7 +1218,7 @@
 
     // 1) 剔除 10 秒未出现过的设备（已连接的不剔除）
     for (const [id, entry] of rows.entries()) {
-      if (entry.connected) continue;
+      if (entry.connected || entry.connecting || entry.bleReconnectTimer !== null) continue;
       if (now - entry.lastSeenMs > MAX_AGE_MS) {
         entry.tr?.remove();
         entry.detailsTr?.remove();
@@ -1173,6 +1244,16 @@
 
   function clearTable() {
     for (const entry of rows.values()) {
+      entry.manualDisconnect = true;
+      clearBleReconnectTimer(entry);
+      stopWatchingEntryAdvertisements(entry);
+      if (entry.gattDisconnectDevice && entry.gattDisconnectHandler) {
+        try {
+          entry.gattDisconnectDevice.removeEventListener("gattserverdisconnected", entry.gattDisconnectHandler);
+        } catch (_) {}
+      }
+      entry.gattDisconnectDevice = null;
+      entry.gattDisconnectHandler = null;
       try { entry.gattServer?.device?.gatt?.disconnect(); } catch (_) {}
       try { entry.grantedDevice?.gatt?.disconnect(); } catch (_) {}
     }
@@ -1184,12 +1265,14 @@
     updateServerCardVisibility(null);
     updateNotifyOptionsVisibility(null);
     updateSendCardVisibility(null);
-    log("已清空列表（并尝试断开所有连接）");
+    updateLogVisibility(null);
+    log("Device list cleared. Attempted to disconnect all devices.");
   }
 
   function focusOnEntry(keepEntry) {
     for (const [id, entry] of rows.entries()) {
       if (entry === keepEntry) continue;
+      stopWatchingEntryAdvertisements(entry);
       entry.tr?.remove();
       entry.detailsTr?.remove();
       rows.delete(id);
@@ -1197,6 +1280,111 @@
     // Ensure the kept entry is visible and at top
     if (keepEntry?.tr) tbody.appendChild(keepEntry.tr);
     if (keepEntry?.detailsTr) tbody.appendChild(keepEntry.detailsTr);
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function isTransientBleConnectError(error) {
+    const msg = String(error?.message || error || "");
+    return /Connection attempt failed|Connection Error|GATT Server is disconnected|NetworkError/i.test(msg);
+  }
+
+  async function connectGattWithRetry(device) {
+    let lastError = null;
+    for (let i = 0; i < BLE_CONNECT_RETRY_DELAYS_MS.length; i += 1) {
+      const delay = BLE_CONNECT_RETRY_DELAYS_MS[i];
+      if (delay > 0) await sleep(delay);
+
+      try {
+        return await device.gatt.connect();
+      } catch (e) {
+        lastError = e;
+        if (!isTransientBleConnectError(e) || i === BLE_CONNECT_RETRY_DELAYS_MS.length - 1) {
+          throw e;
+        }
+        log(`BLE connect attempt ${i + 1} failed: ${e?.message || e}. Retrying...`);
+      }
+    }
+    throw lastError;
+  }
+
+  function clearBleReconnectTimer(entry) {
+    if (!entry || entry.bleReconnectTimer === null) return;
+    window.clearTimeout(entry.bleReconnectTimer);
+    entry.bleReconnectTimer = null;
+  }
+
+  function resetEntryBleState(entry) {
+    entry.connected = false;
+    entry.connecting = false;
+    entry.gattServer = null;
+    entry.nusWriteChar = null;
+    entry.nusNotifyChars = new Map();
+    entry.nusNotifyEnabled = new Set();
+    entry.nusNotifyBound = new Set();
+  }
+
+  function cleanupDisconnectedEntry(entry) {
+    resetEntryBleState(entry);
+    stopWatchingEntryAdvertisements(entry);
+    setButtonState(entry, "idle");
+    if (activeEntry === entry) {
+      activeEntry = null;
+      disconnectLogServer();
+      updateServerCardVisibility(null);
+      updateNotifyOptionsVisibility(null);
+      updateSendCardVisibility(null);
+      updateLogVisibility(null);
+    }
+  }
+
+  function bindGattDisconnectHandler(entry, device) {
+    if (entry.gattDisconnectDevice === device && entry.gattDisconnectHandler) return;
+    if (entry.gattDisconnectDevice && entry.gattDisconnectHandler) {
+      try {
+        entry.gattDisconnectDevice.removeEventListener("gattserverdisconnected", entry.gattDisconnectHandler);
+      } catch (_) {}
+    }
+
+    entry.gattDisconnectDevice = device;
+    entry.gattDisconnectHandler = () => {
+      if (entry.manualDisconnect) return;
+
+      cleanupDisconnectedEntry(entry);
+      log(`Device disconnected: ${device.name || "(Unnamed)"}`);
+      scheduleBleReconnect(entry, "unexpected-disconnect");
+    };
+
+    device.addEventListener("gattserverdisconnected", entry.gattDisconnectHandler);
+  }
+
+  function scheduleBleReconnect(entry, reason) {
+    if (!entry || entry.manualDisconnect) return;
+    if (!entry.grantedDevice) return;
+    if (entry.connected || entry.connecting) return;
+    if (entry.bleReconnectTimer !== null) return;
+
+    if (entry.bleReconnectAttempt >= BLE_RECONNECT_MAX_ATTEMPTS) {
+      setButtonState(entry, "idle");
+      log(`BLE auto reconnect stopped after ${BLE_RECONNECT_MAX_ATTEMPTS} attempt(s).`);
+      return;
+    }
+
+    const delay = Math.min(
+      BLE_RECONNECT_BASE_DELAY_MS * (2 ** entry.bleReconnectAttempt),
+      BLE_RECONNECT_MAX_DELAY_MS
+    );
+    entry.bleReconnectAttempt += 1;
+    setButtonState(entry, "connecting");
+    log(`BLE disconnected unexpectedly. Reconnecting in ${Math.floor(delay / 1000)}s (${reason}).`);
+
+    entry.bleReconnectTimer = window.setTimeout(() => {
+      entry.bleReconnectTimer = null;
+      if (entry.manualDisconnect || entry.connected || entry.connecting) return;
+      void connectEntry(entry, entry.grantedDevice, { autoReconnect: true });
+    }, delay);
   }
 
   function normalizeServiceToken(token) {
@@ -1232,7 +1420,7 @@
   }
 
   function getOptionalServices() {
-    const raw = svcInput.value || "";
+    const raw = DEFAULT_OPTIONAL_SERVICES_RAW;
     const tokens = raw.split(",").map(s => s.trim()).filter(Boolean);
     const normalized = [];
     for (const tok of tokens) {
@@ -1244,47 +1432,73 @@
     return Array.from(new Set(normalized));
   }
 
+  function getFilterCompanyIdentifier() {
+    const raw = String(FILTER_COMPANY_ID_HEX || "").trim().toLowerCase();
+    const hex = raw.startsWith("0x") ? raw.slice(2) : raw;
+    const n = Number.parseInt(hex, 16);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function buildDeviceRequestOptions(optionalServices, name = "") {
+    const companyIdentifier = getFilterCompanyIdentifier();
+    if (companyIdentifier == null) {
+      throw new Error(`Invalid FILTER_COMPANY_ID_HEX: ${FILTER_COMPANY_ID_HEX}`);
+    }
+
+    const filter = {
+      manufacturerData: [{ companyIdentifier }]
+    };
+    if (hasName(name) && name !== "(Unnamed)") {
+      filter.name = name;
+    }
+
+    return {
+      filters: [filter],
+      optionalServices,
+      optionalManufacturerData: [companyIdentifier]
+    };
+  }
+
   async function startScan() {
     if (!("bluetooth" in navigator)) {
-      log("当前浏览器不支持 Web Bluetooth（navigator.bluetooth 不存在）");
+      log("This browser does not support Web Bluetooth (navigator.bluetooth is unavailable).");
       return;
     }
 
-    if (typeof navigator.bluetooth.requestLEScan === "function") {
-      try {
-        scan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
-        navigator.bluetooth.addEventListener("advertisementreceived", onAdv);
-        btnStart.disabled = true;
-        btnStop.disabled = false;
-        ensureRefreshTimer();
-        log("开始扫描：requestLEScan 已启动（将持续接收周边广播事件）");
-        return;
-      } catch (e) {
-        log("requestLEScan 启动失败：" + (e?.message || e));
-        log("将尝试降级到 requestDevice（只能手动选设备，且通常拿不到 RSSI）");
-      }
-    } else {
-      log("当前浏览器没有 requestLEScan（Scanning API 不可用）。尝试降级到 requestDevice。");
-    }
-
-    // 降级：requestDevice（不是“被动扫描所有广播”）
+    btnStart.disabled = true;
     try {
+      const optionalServices = getOptionalServices();
       const device = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: getOptionalServices()
+        ...buildDeviceRequestOptions(optionalServices)
       });
       if (!hasName(device.name)) {
-        log("已选择设备但名称为空：按规则不加入列表");
-      } else {
-        // 该降级路径通常拿不到 RSSI；为严格遵循“RSSI阈值过滤”，这里不加入列表
-        log("提示：该浏览器不支持扫描 RSSI（requestDevice 降级路径），无法按 RSSI 阈值过滤；因此不加入列表");
-        // 若你希望降级路径也显示设备（RSSI 显示为未知），取消下一行注释：
-        // upsertRow({ name: device.name, id: device.id, rssi: undefined, advDevice: device });
+        log("Selected device has an empty name. Connection skipped.");
+        return;
       }
+
+      const manufacturerData = await captureSelectedDeviceManufacturerDataBestEffort(device);
+
+      const entryId = device.id || device.name || "(unknown-id)";
+      upsertRow({
+        name: device.name,
+        id: entryId,
+        rssi: undefined,
+        advDevice: device,
+        manufacturerData
+      });
+
+      const entry = rows.get(entryId);
+      if (!entry) {
+        log("Connection failed: unable to create device entry.");
+        return;
+      }
+      await connectEntry(entry, device);
       ensureRefreshTimer();
-      log(`已选择设备：${device.name || "(无名称)"}`);
     } catch (e) {
-      log("requestDevice 失败：" + (e?.message || e));
+      log("Device selection/connection failed: " + (e?.message || e));
+    } finally {
+      btnStart.disabled = false;
+      if (btnStop) btnStop.disabled = true;
     }
   }
 
@@ -1297,7 +1511,7 @@
     btnStop.disabled = true;
 
     ensureRefreshTimer();
-    log("已停止扫描（列表将仅保留最近10秒出现的设备；已连接设备不会自动消失）");
+    log("Scan stopped. The list will keep only devices seen in the last 10 seconds; connected devices will remain.");
   }
 
   function onAdv(event) {
@@ -1327,63 +1541,54 @@
     });
   }
 
-  async function connectEntry(entry) {
+  async function connectEntry(entry, selectedDevice = null, options = {}) {
+    const { autoReconnect = false } = options;
     if (!("bluetooth" in navigator)) {
-      log("当前浏览器不支持 Web Bluetooth。");
+      log("This browser does not support Web Bluetooth.");
       return;
     }
     if (entry.connecting) return;
 
+    if (!autoReconnect) {
+      entry.manualDisconnect = false;
+      entry.bleReconnectAttempt = 0;
+    }
+    clearBleReconnectTimer(entry);
     entry.connecting = true;
     setButtonState(entry, "connecting");
 
     try {
       const optionalServices = getOptionalServices();
       if (optionalServices.length === 0) {
-        log("提示：optionalServices 为空，连接后无法枚举服务。请在上方输入要访问的服务 UUID/别名。");
+        log("Warning: optionalServices is empty. Services cannot be enumerated after connection.");
       }
 
-      // 点击“连接”时使用 requestDevice() 走一次“用户选择授权”
-      let device = null;
-      if (entry.name && entry.name !== "(无名称)") {
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: entry.name }],
-          optionalServices
-        });
-      } else {
-        device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices
-        });
+      // 从“连接设备”入口进来时已完成选择；从设备卡片重连时再弹一次选择器。
+      let device = selectedDevice;
+      if (!device) {
+        device = await navigator.bluetooth.requestDevice(
+          buildDeviceRequestOptions(optionalServices, entry.name)
+        );
       }
 
       entry.grantedDevice = device;
+      entry.name = device.name || entry.name || "(Unnamed)";
 
-      device.addEventListener("gattserverdisconnected", () => {
-        entry.connected = false;
-        entry.connecting = false;
-        entry.gattServer = null;
-        setButtonState(entry, "idle");
-        showDetails(entry, "(已断开)", true);
-        log(`设备断开：${device.name || "(无名称)"}`);
-        if (activeEntry === entry) {
-          activeEntry = null;
-          disconnectLogServer();
-          updateServerCardVisibility(null);
-          updateNotifyOptionsVisibility(null);
-          updateSendCardVisibility(null);
-        }
-      });
+      if (BLE_CONNECT_SETTLE_DELAY_MS > 0) {
+        await sleep(BLE_CONNECT_SETTLE_DELAY_MS);
+      }
 
-      const server = await device.gatt.connect();
+      const server = await connectGattWithRetry(device);
+      bindGattDisconnectHandler(entry, device);
       entry.gattServer = server;
       entry.connected = true;
       entry.connecting = false;
+      entry.manualDisconnect = false;
+      entry.bleReconnectAttempt = 0;
       setButtonState(entry, "connected");
-      log(`已连接：${device.name || "(无名称)"}`);
+      log(`Connected: ${device.name || "(Unnamed)"}`);
 
-      // 连接成功后停止扫描，仅保留当前设备
-      stopScan();
+      // 连接成功后仅保留当前设备
       focusOnEntry(entry);
       activeEntry = entry;
 
@@ -1392,38 +1597,128 @@
       await enumerateGATT(entry, server, optionalServices);
       updateNotifyOptionsVisibility(entry);
       updateSendCardVisibility(entry);
+      updateLogVisibility(entry);
       await applySelectedNusNotify(entry);
     } catch (e) {
       entry.connecting = false;
       entry.connected = false;
       entry.gattServer = null;
       setButtonState(entry, "idle");
-      showDetails(entry, `<span class="err">连接/枚举失败：${escapeHtml(e?.message || e)}</span>`, true);
-      log("连接/枚举失败：" + (e?.message || e));
+      showDetails(entry, `<span class="err">Connection/enumeration failed: ${escapeHtml(e?.message || e)}</span>`, true);
+      log("Connection/enumeration failed: " + (e?.message || e));
+      if (autoReconnect && !entry.manualDisconnect) {
+        scheduleBleReconnect(entry, "connect-failed");
+      }
+    }
+  }
+
+  async function captureSelectedDeviceManufacturerDataBestEffort(device) {
+    log("Reading ManufacturerData from device advertisements...");
+    try {
+      return await captureSelectedDeviceManufacturerData(device);
+    } catch (e) {
+      log(`ManufacturerData unavailable before connection: ${e?.message || e}`);
+      return [];
+    }
+  }
+
+  function captureSelectedDeviceManufacturerData(device) {
+    if (!device || typeof device.watchAdvertisements !== "function") {
+      return Promise.reject(new Error("This browser does not support reading ManufacturerData before connection."));
+    }
+
+    return new Promise((resolve, reject) => {
+      let done = false;
+      let timer = null;
+
+      const cleanup = () => {
+        try { device.removeEventListener("advertisementreceived", onAdvertisement); } catch (_) {}
+        try {
+          if (typeof device.unwatchAdvertisements === "function") device.unwatchAdvertisements();
+        } catch (_) {}
+        if (timer !== null) {
+          window.clearTimeout(timer);
+          timer = null;
+        }
+      };
+
+      const finish = (manufacturerData, error) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        if (error) {
+          reject(error);
+          return;
+        }
+        if (!manufacturerData || manufacturerData.length === 0) {
+          reject(new Error(`Failed to read ${FILTER_COMPANY_ID_HEX} ManufacturerData before connection.`));
+          return;
+        }
+        resolve(manufacturerData);
+      };
+
+      const onAdvertisement = (event) => {
+        const manufacturerData = parseManufacturerData(event.manufacturerData);
+        const targetManufacturerData = manufacturerData.filter((item) => item.companyId === FILTER_COMPANY_ID_HEX);
+        if (targetManufacturerData.length === 0) return;
+        finish(targetManufacturerData, null);
+      };
+
+      timer = window.setTimeout(() => {
+        finish(null, new Error(`Reading ManufacturerData before connection timed out (${PRECONNECT_ADVERTISEMENT_TIMEOUT_MS}ms).`));
+      }, PRECONNECT_ADVERTISEMENT_TIMEOUT_MS);
+
+      device.addEventListener("advertisementreceived", onAdvertisement);
+      Promise.resolve(device.watchAdvertisements()).catch((e) => {
+        finish(null, e || new Error("Failed to start watchAdvertisements."));
+      });
+    });
+  }
+
+  function stopWatchingEntryAdvertisements(entry) {
+    const device = entry?.advertisementDevice;
+    const handler = entry?.advertisementHandler;
+    if (device && handler) {
+      try { device.removeEventListener("advertisementreceived", handler); } catch (_) {}
+      try {
+        if (typeof device.unwatchAdvertisements === "function") device.unwatchAdvertisements();
+      } catch (_) {}
+    }
+    if (entry) {
+      entry.advertisementDevice = null;
+      entry.advertisementHandler = null;
+    }
+  }
+
+  function removeEntryCard(entry) {
+    if (!entry) return;
+    clearBleReconnectTimer(entry);
+    stopWatchingEntryAdvertisements(entry);
+    if (entry.gattDisconnectDevice && entry.gattDisconnectHandler) {
+      try {
+        entry.gattDisconnectDevice.removeEventListener("gattserverdisconnected", entry.gattDisconnectHandler);
+      } catch (_) {}
+    }
+    entry.gattDisconnectDevice = null;
+    entry.gattDisconnectHandler = null;
+    entry.tr?.remove();
+    entry.detailsTr?.remove();
+    for (const [id, rowEntry] of rows.entries()) {
+      if (rowEntry === entry) rows.delete(id);
     }
   }
 
   async function disconnectEntry(entry) {
+    entry.manualDisconnect = true;
+    clearBleReconnectTimer(entry);
     try {
       const device = entry.grantedDevice || entry.advDevice || entry.gattServer?.device;
       if (device?.gatt?.connected) device.gatt.disconnect();
     } catch (_) {}
 
-    entry.connected = false;
-    entry.connecting = false;
-    entry.gattServer = null;
-    entry.nusWriteChar = null;
-    entry.nusNotifyChars = new Map();
-    entry.nusNotifyEnabled = new Set();
-    entry.nusNotifyBound = new Set();
-    setButtonState(entry, "idle");
-    showDetails(entry, "(已断开)", true);
-    log(`已断开：${entry.grantedDevice?.name || entry.name || "(无名称)"}`);
-    if (activeEntry === entry) activeEntry = null;
-    disconnectLogServer();
-    updateServerCardVisibility(null);
-    updateNotifyOptionsVisibility(null);
-    updateSendCardVisibility(null);
+    cleanupDisconnectedEntry(entry);
+    log(`Disconnected: ${entry.grantedDevice?.name || entry.name || "(Unnamed)"}`);
+    removeEntryCard(entry);
   }
 
   function showDetails(entry, html, open) {
@@ -1440,8 +1735,8 @@
       // getPrimaryServices() 只会返回“本 origin 被允许访问”的 services
       const services = await server.getPrimaryServices();
       const allowNote = optionalServices?.length
-        ? `<div class="subhint">当前允许访问的服务数量：<span class="mono">${optionalServices.length}</span>（只会显示这些范围内能访问到的服务）</div>`
-        : `<div class="subhint err">optionalServices 为空：浏览器会拒绝访问任何服务。请在上方输入服务 UUID/别名后再连接。</div>`;
+        ? `<div class="subhint">Allowed services: <span class="mono">${optionalServices.length}</span>. Only services in this allowed range can be shown.</div>`
+        : `<div class="subhint err">optionalServices is empty. The browser will block access to all services.</div>`;
 
       if (!services || services.length === 0) {
         entry.nusWriteChar = null;
@@ -1450,7 +1745,7 @@
         entry.nusNotifyBound = new Set();
         updateNotifyOptionsVisibility(entry);
         updateSendCardVisibility(entry);
-        showDetails(entry, `${allowNote}<div>(未发现可访问的 Primary Services)</div>`, false);
+        showDetails(entry, `${allowNote}<div>(No accessible Primary Services found)</div>`, false);
         return;
       }
 
@@ -1470,9 +1765,9 @@
         const svcUuid = svc.uuid;
         let svcBlock = `<div class="svc"><div class="svcTitle">Service: <span class="mono">${escapeHtml(svcUuid)}</span></div>`;
         if (!chars) {
-          svcBlock += `<div class="err">无法读取 Characteristics（可能未将该服务加入 optionalServices 或设备限制）</div>`;
+          svcBlock += `<div class="err">Unable to read Characteristics. The service may be missing from optionalServices or restricted by the device.</div>`;
         } else if (chars.length === 0) {
-          svcBlock += `<div>(无 Characteristics)</div>`;
+          svcBlock += `<div>(No Characteristics)</div>`;
         } else {
           svcBlock += `<ul>`;
           for (const ch of chars) {
@@ -1509,8 +1804,8 @@
       updateNotifyOptionsVisibility(entry);
       updateSendCardVisibility(entry);
     } catch (e) {
-      showDetails(entry, `<span class="err">枚举失败：${escapeHtml(e?.message || e)}</span>`, false);
-      log("枚举服务失败：" + (e?.message || e));
+      showDetails(entry, `<span class="err">Enumeration failed: ${escapeHtml(e?.message || e)}</span>`, false);
+      log("Service enumeration failed: " + (e?.message || e));
     }
   }
 
@@ -1524,6 +1819,7 @@
       btn.textContent = "CONNECT";
       badge.textContent = "";
       badge.className = "chip status";
+      badge.style.display = "";
       return;
     }
     if (state === "connecting") {
@@ -1531,12 +1827,14 @@
       btn.textContent = "CONNECTING";
       badge.textContent = "CONNECTING";
       badge.className = "chip status";
+      badge.style.display = "";
       return;
     }
     btn.disabled = false;
     btn.textContent = "DISCONNECT";
-    badge.textContent = "CONNECTED";
+    badge.textContent = "";
     badge.className = "chip status ok";
+    badge.style.display = "none";
   }
 
   // Override: render each device as a card-like row
@@ -1548,13 +1846,15 @@
         <div class="deviceCard">
           <div class="deviceHead">
             <div>
-              <div class="name"></div>
+              <div class="nameLine">
+                <span class="name"></span>
+                <span class="mfgInline mono"></span>
+              </div>
               <div class="meta mono last"></div>
               <div class="metrics">
                 <span class="mono rssi"></span>
                 <span class="chip status"></span>
               </div>
-              <div class="mfgLine mono"></div>
             </div>
             <button class="connect">CONNECT</button>
           </div>
@@ -1567,7 +1867,7 @@
       <td colspan="4" class="detailsCard">
         <details>
           <summary>Service / Characteristic</summary>
-          <div class="detailBody">(未连接)</div>
+          <div class="detailBody">(Not connected)</div>
         </details>
       </td>
     `;
@@ -1584,27 +1884,25 @@
     tbody.appendChild(detailsTr);
   }
 
-  if (btnStart) btnStart.textContent = "START SCAN";
-  if (btnStop) btnStop.textContent = "STOP";
+  if (btnStart) btnStart.textContent = "CONNECT";
+  if (btnStop) {
+    btnStop.textContent = "STOP";
+    btnStop.style.display = "none";
+  }
   if (btnClear) btnClear.textContent = "CLEAR";
   updateDataFormatUI();
-  if (notifyFormat) {
-    notifyFormat.addEventListener("change", () => {
+  for (const input of notifyFormatInputs) {
+    input.addEventListener("change", () => {
       updateDataFormatUI();
     });
   }
-  if (optNotifyMsg) {
-    optNotifyMsg.addEventListener("change", async () => {
-      await applySelectedNusNotify(activeEntry);
-    });
-  }
-  if (optNotifyLog) {
-    optNotifyLog.addEventListener("change", async () => {
-      await applySelectedNusNotify(activeEntry);
+  if (sendHexMode) {
+    sendHexMode.addEventListener("change", () => {
+      updateSendFormatUI();
     });
   }
   btnStart.addEventListener("click", startScan);
-  btnStop.addEventListener("click", stopScan);
+  if (btnStop) btnStop.addEventListener("click", stopScan);
   btnClear.addEventListener("click", clearTable);
   if (btnSend) {
     btnSend.addEventListener("click", async () => {
@@ -1614,17 +1912,6 @@
   if (btnClearLog) {
     btnClearLog.addEventListener("click", () => {
       logEl.innerHTML = "";
-    });
-  }
-  if (btnConnectServer) {
-    btnConnectServer.addEventListener("click", () => {
-      connectLogServer();
-    });
-  }
-  if (btnDisconnectServer) {
-    btnDisconnectServer.addEventListener("click", () => {
-      disconnectLogServer({ userAction: true });
-      log("日志服务器已断开");
     });
   }
   if (btnCopyFlags) {
@@ -1644,9 +1931,9 @@
           document.execCommand("copy");
           ta.remove();
         }
-        setCopyStatus("已复制", true);
+        setCopyStatus("Copied", true);
       } catch (e) {
-        setCopyStatus("复制失败，请手动复制", false);
+        setCopyStatus("Copy failed. Please copy manually.", false);
       }
     });
   }
@@ -1662,10 +1949,14 @@
   window.addEventListener("online", () => {
     reconnectLogServerIfNeeded("online");
   });
+  window.addEventListener("resize", () => {
+    positionSendCardAtViewportTop();
+  });
 
   updateServerCardVisibility(null);
+  updateLogVisibility(null);
   setServerUiState("idle");
-  log("页面已加载。请点击“开始扫描”。");
+  log("Page loaded. Click CONNECT to select a device.");
 })();
 </script>
 </body>
